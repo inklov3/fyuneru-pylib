@@ -2,7 +2,6 @@ from collections.abc import Callable
 from functools import partial
 from typing import Protocol
 
-from boto3 import client
 from boto3.session import Session
 from botocore.client import BaseClient
 from botocore.config import Config
