@@ -24,10 +24,8 @@ def init_client_cluster(
     return partial(RedisCluster, host=host, port=port, db=db, **kwargs)
 
 
-def checkpoint_calculator(
-    checkpoint: str, task: str, worker: str, version: str = "v1"
-) -> str:
-    return f"{worker}:{task}:checkpoint:{version}:{checkpoint}"
+def checkpoint_calculator(checkpoint: str, task: str, worker: str) -> str:
+    return f"{worker}:{task}:checkpoint:{checkpoint}"
 
 
 class RedisSetReader(Protocol):
@@ -71,9 +69,8 @@ def init_checkpointer(
     checkpoint: str,
     task: str,
     worker: str,
-    version: str = "v1",
 ) -> tuple[AdvanceCheckpoint, IsPastCheckpoint, DelCheckpoint]:
-    checkpoint_id = checkpoint_calculator(checkpoint, task, worker, version)
+    checkpoint_id = checkpoint_calculator(checkpoint, task, worker)
     set_writer, set_reader, set_deleter = init_redis_set(client, checkpoint_id)
 
     @safe
