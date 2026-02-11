@@ -17,6 +17,13 @@ redis = [
 s3 = [
     "boto3>=1.42.45",
 ]
+pipeline = [
+  "fyuneru[redis,s3]",
+  "dramatiq>=2.0.1", 
+]
+media = [
+    "av>=16.1.0",
+]
 
 [build-system]
 requires = ["hatchling"]
