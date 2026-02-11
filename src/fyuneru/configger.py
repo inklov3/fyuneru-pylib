@@ -6,11 +6,13 @@ from pathlib import Path
 from tomllib import load
 
 
-def read_config(config: Path) -> dict:
+def read_config(config: Path) -> dict[str, int | float | str]:
     return load(config.open("rb"))
 
 
-def default_choice(choice: list[str | int | None], default: str | int) -> str | int:
+def default_choice(
+    choice: list[str | int | float | None], default: str | int | float
+) -> str | int | float:
     for c in choice:
         if c is None:
             continue
@@ -18,7 +20,7 @@ def default_choice(choice: list[str | int | None], default: str | int) -> str | 
     return default
 
 
-def error_choice(choice: list[str | int | None]) -> str | int:
+def error_choice(choice: list[str | int | float | None]) -> str | int | float:
     for c in choice:
         if c is None:
             continue
