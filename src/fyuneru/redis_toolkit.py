@@ -13,15 +13,15 @@ from fyuneru.checkpointer import AdvanceCheckpoint, DelCheckpoint, IsPastCheckpo
 
 
 def init_client_standalone(
-    host: str, port: int, database: int, **kwargs
+    host: str, port: int, db: int, **kwargs
 ) -> Callable[[], Redis]:
-    return partial(Redis, host=host, port=port, db=database, **kwargs)
+    return partial(Redis, host=host, port=port, db=db, **kwargs)
 
 
 def init_client_cluster(
-    host: str, port: int, databse: int, **kwargs
+    host: str, port: int, db: int, **kwargs
 ) -> Callable[[], RedisCluster]:
-    return partial(RedisCluster, host=host, port=port, db=databse, **kwargs)
+    return partial(RedisCluster, host=host, port=port, db=db, **kwargs)
 
 
 def checkpoint_calculator(
