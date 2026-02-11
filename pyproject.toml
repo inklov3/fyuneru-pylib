@@ -42,3 +42,5 @@ skip-magic-trailing-comma = false
 dev = [
     "pyclean>=3.5.0",
 ]
+
+[tool.pyrefly]
