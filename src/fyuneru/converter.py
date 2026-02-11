@@ -19,7 +19,9 @@ def bytes_to_object(data: bytes) -> any:
 
 
 class NonSerializable:
-    """标记字段为不可序列化：序列化时将跳过此字段"""
+    """
+    序列化忽略标记
+    """
 
     def __repr__(self):
         return "<NonSerializable>"
