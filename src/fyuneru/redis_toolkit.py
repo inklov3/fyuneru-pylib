@@ -56,7 +56,8 @@ def init_redis_set(
 
     @safe
     def set_reader(key: str) -> bool:
-        return client.sismember(set_name, key)
+        result = client.sismember(set_name, key)
+        return bool(result)
 
     @safe
     def set_deleter(key: str) -> None:
@@ -77,14 +78,14 @@ def init_checkpointer(
 
     @safe
     def advance_checkpoint(checkpoint_uid: str) -> None:
-        set_writer(checkpoint_uid)
+        set_writer(checkpoint_uid).unwrap()
 
     @safe
     def is_past_checkpoint(checkpoint_uid: str) -> bool:
-        return set_reader(checkpoint_uid)
+        return set_reader(checkpoint_uid).unwrap()
 
     @safe
     def del_checkpoint(checkpoint_uid: str) -> None:
-        set_deleter(checkpoint_uid)
+        set_deleter(checkpoint_uid).unwrap()
 
     return advance_checkpoint, is_past_checkpoint, del_checkpoint

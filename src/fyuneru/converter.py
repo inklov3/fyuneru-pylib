@@ -3,16 +3,17 @@
 from io import BytesIO
 from pickle import dump as dump_pickle
 from pickle import load as load_pickle
+from typing import Any
 
 
-def object_to_bytes(data: any) -> bytes:
+def object_to_bytes(data: Any) -> bytes:
     buf = BytesIO()
     dump_pickle(data, buf)
     buf.seek(0)
     return buf.getvalue()
 
 
-def bytes_to_object(data: bytes) -> any:
+def bytes_to_object(data: bytes) -> Any:
     buf = BytesIO(data)
     buf.seek(0)
     return load_pickle(buf)
@@ -27,7 +28,7 @@ class NonSerializable:
         return "<NonSerializable>"
 
 
-def to_json_object(data: any) -> any:
+def to_json_object(data: Any) -> Any:
     """
     转 json 对象
     """
