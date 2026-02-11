@@ -3,9 +3,9 @@ from functools import partial
 from typing import Protocol
 
 from boto3.session import Session
-from botocore.client import BaseClient
 from botocore.config import Config
 from botocore.response import StreamingBody
+from mypy_boto3_s3.client import S3Client
 from returns.result import safe
 
 
@@ -29,7 +29,7 @@ def init_s3_client(
         signature_version="s3v4",
         s3={"addressing_style": "virtual"},
     ),
-) -> Callable[[], BaseClient]:
+) -> Callable[[], S3Client]:
     return partial(
         session.client,
         service_name=service_name,
@@ -54,9 +54,9 @@ class ObjectStorageDeleter(Protocol):
 
 
 def init_s3(
-    client: BaseClient, bucket: str
+    client: S3Client, bucket: str
 ) -> tuple[ObjectStorageWriter, ObjectStorageReader, ObjectStorageDeleter]:
-    client: BaseClient = client
+    client: S3Client = client
 
     @safe
     def write_object(key: str, body: bytes) -> None:

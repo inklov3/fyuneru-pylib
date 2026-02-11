@@ -124,6 +124,7 @@ media = [
 pipeline = [
     { name = "boto3" },
     { name = "dramatiq" },
+    { name = "mypy-boto3-s3" },
     { name = "redis" },
 ]
 redis = [
@@ -131,6 +132,7 @@ redis = [
 ]
 s3 = [
     { name = "boto3" },
+    { name = "mypy-boto3-s3" },
 ]
 
 [package.dev-dependencies]
@@ -145,6 +147,7 @@ requires-dist = [
     { name = "dramatiq", marker = "extra == 'pipeline'", specifier = ">=2.0.1" },
     { name = "fyuneru", extras = ["redis", "s3"], marker = "extra == 'pipeline'" },
     { name = "loguru", specifier = ">=0.7.3" },
+    { name = "mypy-boto3-s3", marker = "extra == 's3'", specifier = ">=1.42.37" },
     { name = "redis", marker = "extra == 'redis'", specifier = ">=7.1.0" },
     { name = "returns", specifier = ">=0.26.0" },
     { name = "tqdm", specifier = ">=4.67.3" },
@@ -174,6 +177,18 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/3a/05/a1dae3dffd1116099471c643b8924f5aa6524411dc6c63fdae648c4f1aca/loguru-0.7.3.tar.gz", hash = "sha256:19480589e77d47b8d85b2c827ad95d49bf31b0dcde16593892eb51dd18706eb6", size = 63559, upload-time = "2024-12-06T11:20:56.608Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/0c/29/0348de65b8cc732daa3e33e67806420b2ae89bdce2b04af740289c5c6c8c/loguru-0.7.3-py3-none-any.whl", hash = "sha256:31a33c10c8e1e10422bfd431aeb5d351c7cf7fa671e3c4df004162264b28220c", size = 61595, upload-time = "2024-12-06T11:20:54.538Z" },
+]
+
+[[package]]
+name = "mypy-boto3-s3"
+version = "1.42.37"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "typing-extensions", marker = "python_full_version < '3.12'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/e6/41/44066f4cd3421bacb6aad4ec7b1da8d0f8858560e526166db64d95fa7ad7/mypy_boto3_s3-1.42.37.tar.gz", hash = "sha256:628a4652f727870a07e1c3854d6f30dc545a7dd5a4b719a2c59c32a95d92e4c1", size = 76317, upload-time = "2026-01-28T20:51:52.971Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/94/06/cb6050ecd72f5fa449bac80ad1a4711719367c4f545201317f36e3999784/mypy_boto3_s3-1.42.37-py3-none-any.whl", hash = "sha256:7c118665f3f583dbfde1013ce47908749f9d2a760f28f59ec65732306ee9cec9", size = 83439, upload-time = "2026-01-28T20:51:49.99Z" },
 ]
 
 [[package]]

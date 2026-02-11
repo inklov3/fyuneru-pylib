@@ -16,6 +16,7 @@ redis = [
 ]
 s3 = [
     "boto3>=1.42.45",
+    "mypy-boto3-s3>=1.42.37",
 ]
 pipeline = [
   "fyuneru[redis,s3]",
