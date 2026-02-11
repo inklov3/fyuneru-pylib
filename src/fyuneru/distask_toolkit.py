@@ -1,6 +1,5 @@
-from __future__ import annotations
-
 from collections.abc import Callable
+from functools import partial
 from typing import Any, cast
 
 from dramatiq.broker import Broker
@@ -61,36 +60,19 @@ class RedisClusterLuaCompat:
 
 
 def init_redis_broker(
-    redis_getter: Callable[[], Redis | RedisCluster],
+    redis_client: Redis | RedisCluster,
     namespace: str = "znk:{dramatiq}",
 ) -> Callable[[], Broker]:
-    redis_client = redis_getter()
-    if isinstance(redis_client, RedisCluster):
-        # 兜底路由 key：复用 namespace 的 hash tag（如 "{dramatiq}"）可以保证路由稳定
-        routing_key = f"{namespace}:__lua_route__"
-        redis_client = RedisClusterLuaCompat(redis_client, routing_key=routing_key)
+    # if isinstance(redis_client, RedisCluster):
+    #     # 兜底路由 key：复用 namespace 的 hash tag（如 "{dramatiq}"）可以保证路由稳定
+    #     routing_key = f"{namespace}:__lua_route__"
+    #     redis_client = RedisClusterLuaCompat(redis_client, routing_key=routing_key)
     # middleware = WorkflowMiddleware(backend=MemcachedBackend())
-    redis_broker = RedisBroker(client=redis_client, namespace=namespace)
-    # redis_broker.add_middleware(middleware)
-
-    def get_redis_broker() -> Broker:
-        return redis_broker
-
-    return get_redis_broker
-
-
-def init_redis_cluster_broker(
-    redis_cluster_getter: Callable[[], RedisCluster],
-) -> Callable[[], Broker]:
-    redis_cluster = redis_cluster_getter()
-    redis_cluster_broker = RedisBroker(
-        client=redis_cluster, namespace="inklov3:{dramatiq}"
+    return partial(
+        RedisBroker,
+        client=redis_client,
+        namespace=namespace,
     )
-
-    def get_redis_cluster_broker() -> Broker:
-        return redis_cluster_broker
-
-    return get_redis_cluster_broker
 
 
 def new_message(
