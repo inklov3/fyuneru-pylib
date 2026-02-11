@@ -133,6 +133,11 @@ s3 = [
     { name = "boto3" },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "pyclean" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "av", marker = "extra == 'media'", specifier = ">=16.1.0" },
@@ -145,6 +150,9 @@ requires-dist = [
     { name = "tqdm", specifier = ">=4.67.3" },
 ]
 provides-extras = ["redis", "s3", "pipeline", "media"]
+
+[package.metadata.requires-dev]
+dev = [{ name = "pyclean", specifier = ">=3.5.0" }]
 
 [[package]]
 name = "jmespath"
@@ -166,6 +174,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/3a/05/a1dae3dffd1116099471c643b8924f5aa6524411dc6c63fdae648c4f1aca/loguru-0.7.3.tar.gz", hash = "sha256:19480589e77d47b8d85b2c827ad95d49bf31b0dcde16593892eb51dd18706eb6", size = 63559, upload-time = "2024-12-06T11:20:56.608Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/0c/29/0348de65b8cc732daa3e33e67806420b2ae89bdce2b04af740289c5c6c8c/loguru-0.7.3-py3-none-any.whl", hash = "sha256:31a33c10c8e1e10422bfd431aeb5d351c7cf7fa671e3c4df004162264b28220c", size = 61595, upload-time = "2024-12-06T11:20:54.538Z" },
+]
+
+[[package]]
+name = "pyclean"
+version = "3.5.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/75/56/d90b195c172b7fb993274d27cd546604855849557eb0b0074e621f8e8610/pyclean-3.5.0.tar.gz", hash = "sha256:6033b7cb728fbdacc5912dc72e09baee76aeef328430f3e9ccb1a78def4fbfd4", size = 26594, upload-time = "2026-01-10T17:03:27.482Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/9f/60/e8aed49c01666b0dd1b7097855792bcd0ff65c35096977b4034737cdc91c/pyclean-3.5.0-py3-none-any.whl", hash = "sha256:584801fecd52a7690ba85a141c21ecfbbfb69bcfcd03b2b1b87f5e0d8c7a7c29", size = 27142, upload-time = "2026-01-10T17:03:25.93Z" },
 ]
 
 [[package]]
