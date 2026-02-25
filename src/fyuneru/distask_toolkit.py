@@ -2,7 +2,6 @@ from collections.abc import Callable
 from functools import partial
 from typing import Any, cast
 
-from dramatiq import set_broker
 from dramatiq.broker import Broker
 from dramatiq.brokers.redis import RedisBroker
 from dramatiq.message import Message
@@ -64,8 +63,8 @@ def calculate_namespace(worker: str, task: str) -> str:
     return f"{worker}:{{{task}}}"
 
 
-def set_redis_broker(redis_client: Redis | RedisCluster, namespace: str) -> None:
-    set_broker(broker=RedisBroker(client=redis_client, namespace=namespace))
+def get_redis_broker(redis_client: Redis | RedisCluster, namespace: str) -> Broker:
+    return RedisBroker(client=redis_client, namespace=namespace)
 
 
 def new_message(
@@ -86,17 +85,6 @@ def new_message(
 
 def send_message(
     broker: Broker,
-    actor_name: str,
-    queue_name: str,
-    kwargs: dict[str, Any] = {},
-    options: dict = {},
-    args: tuple = (),
+    message: Message,
 ) -> Message:
-    msg = new_message(
-        actor_name=actor_name,
-        queue_name=queue_name,
-        args=args,
-        kwargs=kwargs,
-        options=options,
-    )
-    return broker.enqueue(msg)
+    return broker.enqueue(message)
