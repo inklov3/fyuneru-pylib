@@ -2,6 +2,7 @@ from collections.abc import Callable
 from functools import partial
 from typing import Any, cast
 
+from dramatiq import set_broker
 from dramatiq.broker import Broker
 from dramatiq.brokers.redis import RedisBroker
 from dramatiq.message import Message
@@ -59,20 +60,12 @@ class RedisClusterLuaCompat:
         return _call
 
 
-def init_redis_broker(
-    redis_client: Redis | RedisCluster,
-    namespace: str = "znk:{dramatiq}",
-) -> Callable[[], Broker]:
-    # if isinstance(redis_client, RedisCluster):
-    #     # 兜底路由 key：复用 namespace 的 hash tag（如 "{dramatiq}"）可以保证路由稳定
-    #     routing_key = f"{namespace}:__lua_route__"
-    #     redis_client = RedisClusterLuaCompat(redis_client, routing_key=routing_key)
-    # middleware = WorkflowMiddleware(backend=MemcachedBackend())
-    return partial(
-        RedisBroker,
-        client=redis_client,
-        namespace=namespace,
-    )
+def calculate_namespace(worker: str, task: str) -> str:
+    return f"{worker}:{{{task}}}"
+
+
+def set_redis_broker(redis_client: Redis | RedisCluster, namespace: str) -> None:
+    set_broker(broker=RedisBroker(client=redis_client, namespace=namespace))
 
 
 def new_message(
