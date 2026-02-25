@@ -21,7 +21,7 @@ class LogLevel:
 
 @safe
 def init_logger(
-    level: str = LogLevel.INFO, log_dir: Path = Path("logs")
+    level: str = LogLevel.INFO, log_dir: Path | None = None
 ) -> LoguruLogger:
     format = "{time:YYYY-MM-DD HH:mm:ss}<level>|{level}|{message}</level>"
     logger.remove()
