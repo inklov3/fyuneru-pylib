@@ -25,6 +25,7 @@ pipeline = [
 ]
 media = [
     "av>=16.1.0",
+    "pillow>=12.1.1",
 ]
 
 [build-system]
