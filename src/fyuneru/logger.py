@@ -6,8 +6,6 @@ from datetime import datetime
 from pathlib import Path
 from sys import stdout
 
-from loguru import Logger as LoguruLogger
-from loguru import logger
 from returns.result import safe
 from tqdm import tqdm
 
@@ -20,9 +18,9 @@ class LogLevel:
 
 
 @safe
-def init_logger(
-    level: str = LogLevel.INFO, log_dir: Path | None = None
-) -> LoguruLogger:
+def init_logger(level: str = LogLevel.INFO, log_dir: Path | None = None):
+    from loguru import logger
+
     format = "{time:YYYY-MM-DD HH:mm:ss}<level>|{level}|{message}</level>"
     logger.remove()
     logger.add(sink=stdout, level=level, format=format)
@@ -43,35 +41,11 @@ def init_logger(
             enqueue=True,
             encoding="utf-8",
         )
-    return logger
-
-
-@safe
-def log_message(logger: LoguruLogger, message: str, level: str = "INFO") -> None:
-    logger.log(level, message)
-
-
-@safe
-def log_info(message: str) -> None:
-    log_message(logger, message, "INFO")
-
-
-@safe
-def log_warning(message: str) -> None:
-    log_message(logger, message, "WARNING")
-
-
-@safe
-def log_error(message: str) -> None:
-    log_message(logger, message, "ERROR")
-
-
-@safe
-def log_debug(message: str) -> None:
-    log_message(logger, message, "DEBUG")
 
 
 def tqdm_loguru(iterable, level="INFO", **tqdm_kwargs):
+    from loguru import logger
+
     """
     使用 loguru 打印 tqdm 进度的函数式包装器
 
