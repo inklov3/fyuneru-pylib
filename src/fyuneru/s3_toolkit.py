@@ -1,41 +1,14 @@
 from collections.abc import Callable
+from dataclasses import dataclass
 from functools import partial
+from pathlib import Path
 from typing import Protocol
 
-from boto3.session import Session
+from boto3 import Session
 from botocore.config import Config
 from botocore.response import StreamingBody
 from mypy_boto3_s3.client import S3Client
 from returns.result import safe
-
-
-def create_session(
-    access_key_id: str,
-    secret_access_key: str,
-    region_name: str = "us-east-1",
-) -> Session:
-    return Session(
-        aws_access_key_id=access_key_id,
-        aws_secret_access_key=secret_access_key,
-        region_name=region_name,
-    )
-
-
-def init_s3_client(
-    session: Session,
-    endpoint: str,
-    service_name: str = "s3",
-    config: Config = Config(
-        signature_version="s3v4",
-        s3={"addressing_style": "virtual"},
-    ),
-) -> Callable[[], S3Client]:
-    return partial(
-        session.client,
-        service_name=service_name,
-        endpoint_url=endpoint,
-        config=config,
-    )
 
 
 class ObjectStorageWriter(Protocol):
@@ -53,7 +26,29 @@ class ObjectStorageDeleter(Protocol):
     def __call__(self, key: str) -> None: ...
 
 
-def init_s3(
+def create_s3client(
+    endpoint: str,
+    access_key_id: str,
+    secret_access_key: str,
+    region_name: str | None = None,
+    config=Config(
+        signature_version="s3v4",
+        s3={"addressing_style": "virtual"},
+    ),
+) -> S3Client:
+    session: Session = Session(
+        aws_access_key_id=access_key_id,
+        aws_secret_access_key=secret_access_key,
+        region_name=region_name,
+    )
+    return session.client(
+        service_name="s3",
+        endpoint_url=endpoint,
+        config=config,
+    )
+
+
+def init_s3worker(
     client: S3Client, bucket: str
 ) -> tuple[ObjectStorageWriter, ObjectStorageReader, ObjectStorageDeleter]:
     client: S3Client = client
@@ -75,3 +70,17 @@ def init_s3(
         client.delete_object(Bucket=bucket, Key=key)
 
     return write_object, read_object, delete_object
+
+
+@dataclass(frozen=True)
+class BucketSource:
+    """
+    多s3源支持, 桶单位
+    """
+
+    id: str
+    endpoint: str
+    region: str
+    access_key_id: str
+    secret_access_key: str
+    bucket: str
