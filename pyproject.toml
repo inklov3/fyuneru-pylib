@@ -20,7 +20,8 @@ s3 = [
 ]
 pipeline = [
   "fyuneru[redis,s3]",
-  "dramatiq>=2.0.1", 
+  "dramatiq>=2.0.1",
+  "pymongo>=4.16.0",
 ]
 media = [
     "av>=16.1.0",
