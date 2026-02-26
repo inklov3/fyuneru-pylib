@@ -63,7 +63,7 @@ def calculate_namespace(worker: str, task: str) -> str:
     return f"{worker}:{{{task}}}"
 
 
-def get_redis_broker(redis_client: Redis | RedisCluster, namespace: str) -> Broker:
+def create_redis_broker(redis_client: Redis | RedisCluster, namespace: str) -> Broker:
     return RedisBroker(client=redis_client, namespace=namespace)
 
 
