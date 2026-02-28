@@ -1,0 +1,48 @@
+from collections.abc import Callable
+from functools import partial
+from pathlib import Path
+from typing import Any
+
+from google.genai import Client
+from google.genai.types import GenerateContentConfig, HttpOptions
+
+
+def init_client(
+    api_key: str, endpoint: str, api_version: str = "v1beta"
+) -> Callable[[], Client]:
+    """初始化 Gemini 客户端
+
+    Args:
+        api_key: Gemini API 密钥
+        endpoint: 自定义后端地址，默认为 None 使用官方端点
+
+    Returns:
+        Client 实例
+    """
+    return partial(
+        Client,
+        api_key=api_key,
+        http_options=HttpOptions(
+            api_version=api_version,
+            base_url=endpoint,
+            headers={"Authorization": f"Bearer {api_key}"},
+        ),
+    )
+
+
+def get_prompt(prompt_file: Path) -> str:
+    return prompt_file.read_text()
+
+
+def get_config(
+    schema: dict[str, Any],
+    response_mime_type: str = "application/json",
+    temperature: float = 0,
+    system_instruction: str | None = None,
+) -> GenerateContentConfig:
+    return GenerateContentConfig(
+        response_mime_type="application/json",
+        response_json_schema=schema,
+        temperature=0,
+        system_instruction=system_instruction,
+    )
