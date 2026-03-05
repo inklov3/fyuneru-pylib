@@ -1,5 +1,26 @@
 # Changelog
 
+## 2026-03-05 (4)
+
+### 重构
+
+- **`config.py`** — 去掉 TOML 支持（删除 `tomllib` 导入），`read_config` 仅接受 `.yaml` / `.yml`，其他后缀抛出 `ValueError`
+
+### 新增
+
+- **`config.py`** — 新增 4 个纯函数式 client 初始化函数：
+  - `init_redis_from_config` — 从 `redis` 配置段构建 Redis client initializer（支持 standalone / cluster）
+  - `init_s3_from_config` — 从 `s3` 配置段构建 S3 client initializer
+  - `init_mongo_from_config` — 从 `mongo` 配置段构建 MongoDB client initializer
+  - `init_llm_from_config` — 从 `llm` 配置段构建 LLM client initializer（目前支持 gemini）
+  - 各 toolkit 延迟导入，避免未安装可选依赖时 import config 报错
+  - 配置段缺失时直接抛出 `KeyError`
+- **`example.yml`** — 新增 YAML 示例配置文件
+
+### 文档
+
+- **`README.md`** — config 模块说明更新为 YAML + client 初始化；补全从配置文件初始化各 client 的示例
+
 ## 2026-03-05 (3)
 
 ### 重构

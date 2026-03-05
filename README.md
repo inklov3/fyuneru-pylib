@@ -34,7 +34,7 @@ uv add "fyuneru[gemini] @ git+https://github.com/znklov3/fyuneru.git"     # Goog
 | 模块 | 说明 |
 |------|------|
 | `logger` | 基于 loguru 的日志模块，支持文件输出和 tqdm 进度条集成 |
-| `config` | TOML 配置文件读取 |
+| `config` | YAML 配置读取 + 纯函数式 client 初始化（Redis / S3 / MongoDB / LLM） |
 | `converter` | 数据序列化工具（pickle 字节互转、任意对象转 JSON） |
 | `markdown_utils` | Markdown 代码块包裹清除 |
 | `redis_toolkit` | Redis 客户端初始化（Standalone / Cluster）、Set 操作、检查点 key 计算 |
@@ -64,8 +64,38 @@ for item in tqdm_loguru(items, desc="Processing"):
 from pathlib import Path
 from fyuneru.config import read_config
 
-cfg = read_config(Path("settings.toml"))
+# 仅支持 YAML（.yaml / .yml），传入 .toml 等其他格式会抛出 ValueError
+cfg = read_config(Path("config.yml"))
 ```
+
+### 从配置文件初始化各 client
+
+```python
+from pathlib import Path
+from fyuneru.config import (
+    read_config,
+    init_redis_from_config,
+    init_s3_from_config,
+    init_mongo_from_config,
+    init_llm_from_config,
+)
+
+cfg = read_config(Path("config.yml"))
+
+# 各函数返回 Callable，调用后才真正创建连接
+# 配置段不存在时抛出 KeyError
+redis_getter = init_redis_from_config(cfg)   # 支持 standalone / cluster
+s3_getter = init_s3_from_config(cfg)
+mongo_getter = init_mongo_from_config(cfg)
+llm_getter = init_llm_from_config(cfg)       # 目前支持 gemini
+
+redis = redis_getter()
+s3 = s3_getter()
+mongo = mongo_getter()
+llm = llm_getter()
+```
+
+YAML 配置结构参考 [`example.yml`](example.yml)。
 
 ### 数据转换
 
