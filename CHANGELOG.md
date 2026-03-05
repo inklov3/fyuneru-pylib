@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-03-05 (3)
+
+### 重构
+
+- **`redis_toolkit.py`** — 删除 `gen_checkpointer` 及其三个 Protocol 类（`AdvanceCheckpoint`、`IsPastCheckpoint`、`DelCheckpoint`），检查点功能改由 `calculate_checkpoint_key` + `gen_redis_set` 组合实现，消除重复包装
+
+### 文档
+
+- **`README.md`** — 补全 `config`、`converter`、`markdown_utils`、`mongo_toolkit` 的快速上手示例；补充 `tqdm_loguru`、`gen_redis_set`、`calculate_namespace` 用法；检查点示例同步更新为组合写法
+
 ## 2026-03-05 (2)
 
 代码设计与命名审视重构。

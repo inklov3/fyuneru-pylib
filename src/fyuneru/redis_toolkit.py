@@ -10,21 +10,6 @@ from redis import Redis, RedisCluster
 from returns.result import safe
 
 
-class AdvanceCheckpoint(Protocol):
-    @safe
-    def __call__(self, checkpoint_uid: str) -> None: ...
-
-
-class IsPastCheckpoint(Protocol):
-    @safe
-    def __call__(self, checkpoint_uid: str) -> bool: ...
-
-
-class DelCheckpoint(Protocol):
-    @safe
-    def __call__(self, checkpoint_uid: str) -> None: ...
-
-
 def init_client_standalone(
     host: str, port: int, db: int, **kwargs
 ) -> Callable[[], Redis]:
@@ -77,29 +62,3 @@ def gen_redis_set(
     return set_writer, set_reader, set_deleter
 
 
-def gen_checkpointer(
-    client: Redis | RedisCluster,
-    checkpoint: str,
-    task: str,
-    worker: str,
-) -> tuple[AdvanceCheckpoint, IsPastCheckpoint, DelCheckpoint]:
-    checkpoint_id = calculate_checkpoint_key(
-        checkpoint, task, worker
-    )
-    set_writer, set_reader, set_deleter = gen_redis_set(
-        client, checkpoint_id
-    )
-
-    @safe
-    def advance_checkpoint(checkpoint_uid: str) -> None:
-        set_writer(checkpoint_uid).unwrap()
-
-    @safe
-    def is_past_checkpoint(checkpoint_uid: str) -> bool:
-        return set_reader(checkpoint_uid).unwrap()
-
-    @safe
-    def del_checkpoint(checkpoint_uid: str) -> None:
-        set_deleter(checkpoint_uid).unwrap()
-
-    return advance_checkpoint, is_past_checkpoint, del_checkpoint

@@ -9,18 +9,24 @@
 
 ## 安装
 
+> **注意**：PyPI 上的版本可能不是最新的，建议从 GitHub 源安装以获取最新功能。
+
+推荐使用 [uv](https://docs.astral.sh/uv/) 管理依赖：
+
 ```bash
-pip install fyuneru
+# 从 GitHub 安装最新版本
+uv add fyuneru@git+https://github.com/znklov3/fyuneru.git
 ```
 
 按需安装可选依赖：
 
 ```bash
-pip install fyuneru[redis]      # Redis 支持
-pip install fyuneru[s3]         # S3 对象存储支持
-pip install fyuneru[pipeline]   # 分布式任务流水线 (Redis + S3 + Dramatiq + MongoDB)
-pip install fyuneru[media]      # 媒体处理 (av + Pillow)
-pip install fyuneru[gemini]     # Google Gemini 客户端
+uv add "fyuneru[redis] @ git+https://github.com/znklov3/fyuneru.git"      # Redis 支持
+uv add "fyuneru[s3] @ git+https://github.com/znklov3/fyuneru.git"         # S3 对象存储支持
+uv add "fyuneru[mongo] @ git+https://github.com/znklov3/fyuneru.git"      # MongoDB 支持
+uv add "fyuneru[pipeline] @ git+https://github.com/znklov3/fyuneru.git"   # 分布式任务流水线 (Redis + S3 + Dramatiq + MongoDB)
+uv add "fyuneru[media] @ git+https://github.com/znklov3/fyuneru.git"      # 媒体处理 (av + Pillow)
+uv add "fyuneru[gemini] @ git+https://github.com/znklov3/fyuneru.git"     # Google Gemini 客户端
 ```
 
 ## 模块概览
@@ -29,12 +35,12 @@ pip install fyuneru[gemini]     # Google Gemini 客户端
 |------|------|
 | `logger` | 基于 loguru 的日志模块，支持文件输出和 tqdm 进度条集成 |
 | `config` | TOML 配置文件读取 |
-| `converter` | 数据序列化工具（pickle 互转、任意对象转 JSON） |
+| `converter` | 数据序列化工具（pickle 字节互转、任意对象转 JSON） |
 | `markdown_utils` | Markdown 代码块包裹清除 |
-| `redis_toolkit` | Redis 客户端初始化（Standalone / Cluster）、Set 操作、检查点实现 |
+| `redis_toolkit` | Redis 客户端初始化（Standalone / Cluster）、Set 操作、检查点 key 计算 |
 | `s3_toolkit` | S3 客户端创建、对象读写删除 |
 | `mongo_toolkit` | MongoDB 客户端惰性初始化 |
-| `dramatiq_toolkit` | Dramatiq + Redis 分布式任务：Broker 创建、消息构造与发送 |
+| `dramatiq_toolkit` | Dramatiq + Redis 分布式任务：Broker 创建、命名空间计算、消息构造与发送 |
 | `gemini_toolkit` | Google Gemini API 客户端，支持自定义端点和结构化 JSON 输出 |
 
 ## 快速上手
@@ -42,9 +48,45 @@ pip install fyuneru[gemini]     # Google Gemini 客户端
 ### 日志
 
 ```python
-from fyuneru.logger import init_logger, LogLevel
+from fyuneru.logger import init_logger, tqdm_loguru, LogLevel
 
+# 初始化日志，可选输出到文件
 init_logger(level=LogLevel.INFO, log_dir=Path("./logs"))
+
+# 用 loguru 输出 tqdm 进度条
+for item in tqdm_loguru(items, desc="Processing"):
+    process(item)
+```
+
+### 配置
+
+```python
+from pathlib import Path
+from fyuneru.config import read_config
+
+cfg = read_config(Path("settings.toml"))
+```
+
+### 数据转换
+
+```python
+from fyuneru.converter import object_to_bytes, bytes_to_object, to_json_object
+
+# pickle 序列化/反序列化
+raw = object_to_bytes({"key": "value"})
+obj = bytes_to_object(raw)
+
+# 任意对象转 JSON 兼容结构
+json_obj = to_json_object(some_object)
+```
+
+### Markdown 工具
+
+```python
+from fyuneru.markdown_utils import unwrap_codeblock
+
+code = unwrap_codeblock("```python\nprint('hello')\n```")
+# => "print('hello')\n"
 ```
 
 ### Gemini 客户端
@@ -78,25 +120,43 @@ write("key", b"data").unwrap()
 data = read("key").unwrap()
 ```
 
-### Redis 检查点
+### Redis
 
 ```python
-from fyuneru.redis_toolkit import init_client_standalone, gen_checkpointer
+from fyuneru.redis_toolkit import init_client_standalone, gen_redis_set, calculate_checkpoint_key
 
 redis_getter = init_client_standalone(host="localhost", port=6379, db=0)
 redis = redis_getter()
 
-advance, is_past, delete = gen_checkpointer(redis, checkpoint="step1", task="etl", worker="w1")
+# Set 操作
+add, contains, remove = gen_redis_set(redis, set_name="my_set")
+add("item-001").unwrap()
+assert contains("item-001").unwrap() is True
+
+# 检查点（基于 Redis Set 实现）
+checkpoint_key = calculate_checkpoint_key(checkpoint="step1", task="etl", worker="w1")
+advance, is_past, delete = gen_redis_set(redis, set_name=checkpoint_key)
 advance("item-001").unwrap()
 assert is_past("item-001").unwrap() is True
+```
+
+### MongoDB
+
+```python
+from fyuneru.mongo_toolkit import init_client
+
+mongo_getter = init_client(uri="mongodb://localhost:27017")
+client = mongo_getter()
+db = client["my_database"]
 ```
 
 ### 分布式任务
 
 ```python
-from fyuneru.dramatiq_toolkit import init_broker, new_message, send_message
+from fyuneru.dramatiq_toolkit import init_broker, new_message, send_message, calculate_namespace
 
-broker = init_broker(redis_client, namespace="myapp:{task}")
+namespace = calculate_namespace(worker="w1", task="etl")
+broker = init_broker(redis_client, namespace=namespace)
 msg = new_message(actor_name="process", queue_name="default", args=(payload,))
 send_message(broker, msg)
 ```
@@ -106,18 +166,6 @@ send_message(broker, msg)
 - Python >= 3.11
 - 核心：loguru, returns, tqdm
 - 可选：redis, boto3, dramatiq, pymongo, google-genai, av, pillow
-
-## TODO
-
-代码设计与命名审视发现的问题，按优先级排列：
-
-（本轮全部已完成）
-
-- [x] 模块重命名：`configger` → `config`，`json_utils` → `markdown_utils`，`distask_toolkit` → `dramatiq_toolkit`，`gemini_client` → `gemini_toolkit`
-- [x] 函数重命名：`create_redis_broker` → `init_broker`，`checkpoint_calculator` → `calculate_checkpoint_key`，`init_s3client` → `init_client`，`get_config` → `gen_content_config`
-- [x] 删除 `get_prompt`（单行 `Path.read_text()` 包装，无复用价值）
-- [x] 修复 `s3_toolkit.py` 可变默认参数，改为 `config: Config | None = None` 模式
-- [x] README 模块概览表和示例代码同步更新
 
 ## License
 

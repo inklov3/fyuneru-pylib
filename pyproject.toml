@@ -1,7 +1,7 @@
 [project]
 name = "fyuneru"
 version = "0.1.0"
-description = "Add your description here"
+description = "Python 工具库，封装常用基础设施组件，提供统一、可组合的函数式接口。"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -36,6 +36,9 @@ media = [
 ]
 gemini = [
     "google-genai>=1.65.0",
+]
+mongo = [
+    "pymongo>=4.16.0",
 ]
 
 [build-system]
