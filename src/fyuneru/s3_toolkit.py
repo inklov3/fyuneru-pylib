@@ -24,16 +24,18 @@ class ObjectStorageDeleter(Protocol):
     def __call__(self, key: str) -> None: ...
 
 
-def init_s3client(
+def init_client(
     endpoint: str,
     access_key_id: str,
     secret_access_key: str,
     region_name: str | None = None,
-    config=Config(
-        signature_version="s3v4",
-        s3={"addressing_style": "virtual"},
-    ),
+    config: Config | None = None,
 ) -> Callable[[], S3Client]:
+    if config is None:
+        config = Config(
+            signature_version="s3v4",
+            s3={"addressing_style": "virtual"},
+        )
     session: Session = Session(
         aws_access_key_id=access_key_id,
         aws_secret_access_key=secret_access_key,

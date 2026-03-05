@@ -37,7 +37,7 @@ def init_client_cluster(
     return partial(RedisCluster, host=host, port=port, **kwargs)
 
 
-def checkpoint_calculator(
+def calculate_checkpoint_key(
     checkpoint: str, task: str, worker: str
 ) -> str:
     return f"{worker}:{task}:checkpoint:{checkpoint}"
@@ -83,7 +83,7 @@ def gen_checkpointer(
     task: str,
     worker: str,
 ) -> tuple[AdvanceCheckpoint, IsPastCheckpoint, DelCheckpoint]:
-    checkpoint_id = checkpoint_calculator(
+    checkpoint_id = calculate_checkpoint_key(
         checkpoint, task, worker
     )
     set_writer, set_reader, set_deleter = gen_redis_set(

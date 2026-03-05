@@ -1,6 +1,5 @@
 from collections.abc import Callable
 from functools import partial
-from pathlib import Path
 from typing import Any
 
 from google.genai import Client
@@ -30,11 +29,7 @@ def init_client(
     )
 
 
-def get_prompt(prompt_file: Path) -> str:
-    return prompt_file.read_text()
-
-
-def get_config(
+def gen_content_config(
     schema: dict[str, Any],
     response_mime_type: str = "application/json",
     temperature: float = 0,
