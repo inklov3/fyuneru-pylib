@@ -9,7 +9,20 @@ from typing import Protocol
 from redis import Redis, RedisCluster
 from returns.result import safe
 
-from fyuneru.checkpointer import AdvanceCheckpoint, DelCheckpoint, IsPastCheckpoint
+
+class AdvanceCheckpoint(Protocol):
+    @safe
+    def __call__(self, checkpoint_uid: str) -> None: ...
+
+
+class IsPastCheckpoint(Protocol):
+    @safe
+    def __call__(self, checkpoint_uid: str) -> bool: ...
+
+
+class DelCheckpoint(Protocol):
+    @safe
+    def __call__(self, checkpoint_uid: str) -> None: ...
 
 
 def init_client_standalone(
@@ -19,12 +32,14 @@ def init_client_standalone(
 
 
 def init_client_cluster(
-    host: str, port: int, db: int, **kwargs
+    host: str, port: int, **kwargs
 ) -> Callable[[], RedisCluster]:
-    return partial(RedisCluster, host=host, port=port, db=db, **kwargs)
+    return partial(RedisCluster, host=host, port=port, **kwargs)
 
 
-def checkpoint_calculator(checkpoint: str, task: str, worker: str) -> str:
+def checkpoint_calculator(
+    checkpoint: str, task: str, worker: str
+) -> str:
     return f"{worker}:{task}:checkpoint:{checkpoint}"
 
 
@@ -43,11 +58,9 @@ class RedisSetDeleter(Protocol):
     def __call__(self, key: str) -> None: ...
 
 
-def init_redis_set(
+def gen_redis_set(
     client: Redis | RedisCluster, set_name: str
 ) -> tuple[RedisSetWriter, RedisSetReader, RedisSetDeleter]:
-    set_name = set_name
-
     @safe
     def set_writer(key: str) -> None:
         client.sadd(set_name, key)
@@ -64,14 +77,18 @@ def init_redis_set(
     return set_writer, set_reader, set_deleter
 
 
-def init_checkpointer(
+def gen_checkpointer(
     client: Redis | RedisCluster,
     checkpoint: str,
     task: str,
     worker: str,
 ) -> tuple[AdvanceCheckpoint, IsPastCheckpoint, DelCheckpoint]:
-    checkpoint_id = checkpoint_calculator(checkpoint, task, worker)
-    set_writer, set_reader, set_deleter = init_redis_set(client, checkpoint_id)
+    checkpoint_id = checkpoint_calculator(
+        checkpoint, task, worker
+    )
+    set_writer, set_reader, set_deleter = gen_redis_set(
+        client, checkpoint_id
+    )
 
     @safe
     def advance_checkpoint(checkpoint_uid: str) -> None:

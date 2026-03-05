@@ -1,7 +1,5 @@
 from collections.abc import Callable
-from dataclasses import dataclass
 from functools import partial
-from pathlib import Path
 from typing import Protocol
 
 from boto3 import Session
@@ -26,7 +24,7 @@ class ObjectStorageDeleter(Protocol):
     def __call__(self, key: str) -> None: ...
 
 
-def create_s3client(
+def init_s3client(
     endpoint: str,
     access_key_id: str,
     secret_access_key: str,
@@ -35,24 +33,25 @@ def create_s3client(
         signature_version="s3v4",
         s3={"addressing_style": "virtual"},
     ),
-) -> S3Client:
+) -> Callable[[], S3Client]:
     session: Session = Session(
         aws_access_key_id=access_key_id,
         aws_secret_access_key=secret_access_key,
         region_name=region_name,
     )
-    return session.client(
+    return partial(
+        session.client,
         service_name="s3",
         endpoint_url=endpoint,
         config=config,
     )
 
 
-def init_s3worker(
+def gen_s3worker(
     client: S3Client, bucket: str
-) -> tuple[ObjectStorageWriter, ObjectStorageReader, ObjectStorageDeleter]:
-    client: S3Client = client
-
+) -> tuple[
+    ObjectStorageWriter, ObjectStorageReader, ObjectStorageDeleter
+]:
     @safe
     def write_object(key: str, body: bytes) -> None:
         client.put_object(Bucket=bucket, Key=key, Body=body)
@@ -70,17 +69,3 @@ def init_s3worker(
         client.delete_object(Bucket=bucket, Key=key)
 
     return write_object, read_object, delete_object
-
-
-@dataclass(frozen=True)
-class BucketSource:
-    """
-    多s3源支持, 桶单位
-    """
-
-    id: str
-    endpoint: str
-    region: str
-    access_key_id: str
-    secret_access_key: str
-    bucket: str

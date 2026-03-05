@@ -18,25 +18,29 @@ class LogLevel:
 
 
 @safe
-def init_logger(level: str = LogLevel.INFO, log_dir: Path | None = None):
+def init_logger(
+    level: str = LogLevel.INFO, log_dir: Path | None = None
+):
     from loguru import logger
 
-    format = "{time:YYYY-MM-DD HH:mm:ss}<level>|{level}|{message}</level>"
+    log_format = "{time:YYYY-MM-DD HH:mm:ss}<level>|{level}|{message}</level>"
     logger.remove()
-    logger.add(sink=stdout, level=level, format=format)
+    logger.add(sink=stdout, level=level, format=log_format)
     if log_dir:
         log_dir.mkdir(parents=True, exist_ok=True)
-        log_path = log_dir / f"{datetime.now():%Y-%m-%d_%H:%M:%S}.log"
+        log_path = (
+            log_dir / f"{datetime.now():%Y-%m-%d_%H:%M:%S}.log"
+        )
         logger.add(
             str(log_path),
-            format=format,
+            format=log_format,
             level=level,
             enqueue=True,
             encoding="utf-8",
         )
         logger.add(
             str(log_dir / "latest.log"),
-            format=format,
+            format=log_format,
             level=level,
             enqueue=True,
             encoding="utf-8",
@@ -44,8 +48,6 @@ def init_logger(level: str = LogLevel.INFO, log_dir: Path | None = None):
 
 
 def tqdm_loguru(iterable, level="INFO", **tqdm_kwargs):
-    from loguru import logger
-
     """
     使用 loguru 打印 tqdm 进度的函数式包装器
 
@@ -54,6 +56,7 @@ def tqdm_loguru(iterable, level="INFO", **tqdm_kwargs):
         level: loguru 日志级别 (默认 INFO)
         **tqdm_kwargs: 传给 tqdm 的其它参数
     """
+    from loguru import logger
 
     class TqdmToLoguru:
         def __init__(self, log_level):

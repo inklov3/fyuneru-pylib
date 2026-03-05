@@ -14,7 +14,7 @@ def init_client(
 
     Args:
         api_key: Gemini API 密钥
-        endpoint: 自定义后端地址，默认为 None 使用官方端点
+        endpoint: 自定义后端地址
 
     Returns:
         Client 实例
@@ -41,8 +41,8 @@ def get_config(
     system_instruction: str | None = None,
 ) -> GenerateContentConfig:
     return GenerateContentConfig(
-        response_mime_type="application/json",
+        response_mime_type=response_mime_type,
         response_json_schema=schema,
-        temperature=0,
+        temperature=temperature,
         system_instruction=system_instruction,
     )

@@ -10,6 +10,13 @@ dependencies = [
     "tqdm>=4.67.3",
 ]
 
+[dependency-groups]
+dev = [
+    "pyclean",
+    "pyrefly",
+    "ruff",
+]
+
 [project.optional-dependencies]
 redis = [
     "redis>=7.1.0",
@@ -43,10 +50,5 @@ line-length = 88
 quote-style = "double"
 indent-style = "space"
 skip-magic-trailing-comma = false
-
-[dependency-groups]
-dev = [
-    "pyclean>=3.5.0",
-]
 
 [tool.pyrefly]
