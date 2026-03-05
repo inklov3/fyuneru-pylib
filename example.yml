@@ -1,0 +1,21 @@
+redis:
+  host: localhost
+  port: 6379
+  db: 0
+  cluster: false  # 可选，默认 false
+
+s3:
+  endpoint: https://s3.example.com
+  access_key_id: xxx
+  secret_access_key: xxx
+  region_name: us-east-1  # 可选
+
+mongo:
+  uri: mongodb://localhost:27017
+  timeout: 10000  # 可选
+
+llm:
+  provider: gemini  # 标识使用哪个 provider
+  api_key: xxx
+  endpoint: https://api.example.com
+  api_version: v1beta  # 可选
