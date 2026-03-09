@@ -1,5 +1,26 @@
 # Changelog
 
+## 2026-03-09
+
+### 新增
+
+- **`s3_source.py`** — S3 多源协议模块，通过 `blob://桶id/key` URI 透明读取多个 S3 源
+  - `parse_blob_uri` — 解析 `blob://桶id/key` → `(桶id, key)`
+  - `load_source_registry` — 从配置文件 `s3_sources` 段加载源列表，转为以 `source_id` 为 key 的字典
+  - `init_source_reader` — 返回闭包函数，按需懒初始化 client + reader 并缓存
+
+### 文档
+
+- **`docs/s3_source_protocol.md`** — S3 多源协议设计文档
+- **`example.yml`** — 新增 `s3_sources` 多源配置示例
+- **`README.md`** — 模块概览新增 `s3_source`；快速上手新增多源读取示例
+- **`CLAUDE.md`** — Module Layout 新增 `s3_source.py`；修正 `config.py` 依赖描述
+- **`CLAUDE_GUIDE.md`** — 新增 `s3_source` API 参考
+
+### 测试
+
+- **`test/test_s3_source.py`** — `parse_blob_uri` 正常/异常用例
+
 ## 2026-03-05 (4)
 
 ### 重构

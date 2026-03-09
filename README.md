@@ -39,6 +39,7 @@ uv add "fyuneru[gemini] @ git+https://github.com/znklov3/fyuneru.git"     # Goog
 | `markdown_utils` | Markdown 代码块包裹清除 |
 | `redis_toolkit` | Redis 客户端初始化（Standalone / Cluster）、Set 操作、检查点 key 计算 |
 | `s3_toolkit` | S3 客户端创建、对象读写删除 |
+| `s3_source` | S3 多源协议（`blob://桶id/key`），透明读取多个 S3 源 |
 | `mongo_toolkit` | MongoDB 客户端惰性初始化 |
 | `dramatiq_toolkit` | Dramatiq + Redis 分布式任务：Broker 创建、命名空间计算、消息构造与发送 |
 | `gemini_toolkit` | Google Gemini API 客户端，支持自定义端点和结构化 JSON 输出 |
@@ -148,6 +149,22 @@ write, read, delete = gen_s3worker(client(), bucket="my-bucket")
 
 write("key", b"data").unwrap()
 data = read("key").unwrap()
+```
+
+### S3 多源读取
+
+通过 `blob://桶id/key` URI 协议透明访问多个 S3 源。配置格式参考 [`example.yml`](example.yml) 中的 `s3_sources` 段。
+
+```python
+from pathlib import Path
+from fyuneru.s3_source import load_source_registry, init_source_reader
+
+registry = load_source_registry(Path("config.yml"))
+read = init_source_reader(registry)
+
+result = read("blob://my-images/photos/2024/img001.jpg")
+# result: Result[bytes, Exception]
+data = result.unwrap()
 ```
 
 ### Redis

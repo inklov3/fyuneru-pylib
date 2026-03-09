@@ -19,3 +19,18 @@ llm:
   api_key: xxx
   endpoint: https://api.example.com
   api_version: v1beta  # 可选
+
+
+s3_sources:
+- source_id: my-images
+  endpoint: https://s3.example.com
+  bucket: actual-bucket-name
+  access_key_id: xxx
+  secret_access_key: xxx
+  region_name: us-east-1
+
+- source_id: backup-store
+  endpoint: https://s3.backup.com
+  bucket: backup-bucket
+  access_key_id: xxx
+  secret_access_key: xxx

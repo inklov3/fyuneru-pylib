@@ -44,11 +44,12 @@ Error handling uses `@safe` from the `returns` library, wrapping return values i
 | Module | Pattern | External Deps |
 |--------|---------|---------------|
 | `logger.py` | `init_logger` + `tqdm_loguru` helper | loguru, tqdm |
-| `config.py` | Pure function `read_config` | stdlib tomllib |
+| `config.py` | Pure function `read_config` | pyyaml |
 | `converter.py` | Pure functions for pickle/JSON conversion | stdlib |
 | `markdown_utils.py` | Pure function `unwrap_codeblock` | stdlib re |
 | `redis_toolkit.py` | `init_client_*` + `gen_redis_set` | redis |
 | `s3_toolkit.py` | `init_client` + `gen_s3worker` | boto3, mypy-boto3-s3 |
+| `s3_source.py` | `parse_blob_uri` + `load_source_registry` + `init_source_reader` | boto3 (via s3_toolkit) |
 | `mongo_toolkit.py` | `init_client` | pymongo |
 | `dramatiq_toolkit.py` | `init_broker` + message helpers | dramatiq, redis |
 | `gemini_toolkit.py` | `init_client` + `gen_content_config` | google-genai |

@@ -147,6 +147,51 @@ gen_s3worker(client: S3Client, bucket: str)
 # deleter(key: str) -> Result[None, Exception]               — delete_object
 ```
 
+### s3_source (`fyuneru.s3_source`)
+
+Requires: `fyuneru[s3]`
+
+通过 `blob://桶id/key` URI 协议透明访问多个 S3 源。
+
+```python
+from fyuneru.s3_source import parse_blob_uri, load_source_registry, init_source_reader
+
+parse_blob_uri(uri: str) -> tuple[str, str]
+# Parses "blob://bucket_id/key" -> (bucket_id, key).
+# Raises ValueError for invalid format.
+
+load_source_registry(config_path: Path) -> dict[str, dict]
+# Reads config["s3_sources"] list, converts to dict keyed by source_id.
+
+init_source_reader(registry: dict[str, dict]) -> Callable[[str], Result[bytes, Exception]]
+# Returns a closure that reads from blob:// URIs.
+# Lazily initializes S3 clients per bucket_id, caches them.
+```
+
+**Usage:**
+```python
+registry = load_source_registry(Path("config.yml"))
+read = init_source_reader(registry)
+data = read("blob://my-images/photos/img001.jpg").unwrap()
+```
+
+**Config format (`.s3_source.yml`):**
+```yaml
+s3_sources:
+- source_id: my-images
+  endpoint: https://s3.example.com
+  bucket: actual-bucket-name
+  access_key_id: xxx
+  secret_access_key: xxx
+  region_name: us-east-1  # optional
+
+- source_id: backup-store
+  endpoint: https://s3.backup.com
+  bucket: backup-bucket
+  access_key_id: xxx
+  secret_access_key: xxx
+```
+
 ### mongo_toolkit (`fyuneru.mongo_toolkit`)
 
 Requires: `fyuneru[mongo]`
@@ -243,6 +288,14 @@ llm:
   api_key: xxx
   endpoint: https://api.example.com
   api_version: v1beta  # optional, default v1beta
+
+s3_sources:                        # optional, for blob:// multi-source
+- source_id: my-images
+  endpoint: https://s3.example.com
+  bucket: actual-bucket-name
+  access_key_id: xxx
+  secret_access_key: xxx
+  region_name: us-east-1           # optional
 ```
 
 ## Quick Example: Config-driven Initialization
