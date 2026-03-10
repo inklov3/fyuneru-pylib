@@ -47,6 +47,7 @@ tqdm_loguru(iterable, level="INFO", **tqdm_kwargs) -> tqdm
 from fyuneru.config import (
     read_config, init_redis_from_config, init_s3_from_config,
     init_mongo_from_config, init_llm_from_config,
+    init_s3_workspace_from_config, init_mongo_database_from_config,
 )
 
 read_config(config: Path) -> dict[str, list | dict]
@@ -57,15 +58,24 @@ init_redis_from_config(config: dict) -> Callable
 # Raises KeyError if "redis" section missing.
 
 init_s3_from_config(config: dict) -> Callable
-# Reads config["s3"]. Raises KeyError if "s3" section missing.
+# Reads config["s3"]. Returns Callable[[], S3Client].
+# Raises KeyError if "s3" section missing.
 
 init_mongo_from_config(config: dict) -> Callable
-# Reads config["mongo"]. Passes "db" to init_client when present.
+# Reads config["mongo"]. Returns Callable[[], MongoClient].
 # Raises KeyError if "mongo" section missing.
 
 init_llm_from_config(config: dict) -> Callable
 # Reads config["llm"]. Currently only supports provider="gemini".
 # Raises KeyError if "llm" section missing, ValueError for unsupported provider.
+
+init_s3_workspace_from_config(config: dict) -> Callable
+# Reads config["s3"] including required "bucket" field.
+# Returns Callable[[], tuple[ObjectStorageWriter, ObjectStorageReader, ObjectStorageDeleter]].
+
+init_mongo_database_from_config(config: dict) -> Callable
+# Reads config["mongo"] including required "db" field.
+# Returns Callable[[], Database].
 ```
 
 ### converter (`fyuneru.converter`)
@@ -200,10 +210,9 @@ Requires: `fyuneru[mongo]`
 ```python
 from fyuneru.mongo_toolkit import init_client
 
-init_client(uri: str, timeout: int = 10000, db: str | None = None)
-    -> Callable[[], MongoClient] | Callable[[], Database]
+init_client(uri: str, timeout: int = 10000)
+    -> Callable[[], MongoClient]
 # timeout is serverSelectionTimeoutMS
-# When db is specified, the returned callable yields a Database directly.
 # When db is None (default), returns a MongoClient.
 ```
 
@@ -310,13 +319,18 @@ from pathlib import Path
 from fyuneru.config import (
     read_config, init_redis_from_config, init_s3_from_config,
     init_mongo_from_config, init_llm_from_config,
+    init_s3_workspace_from_config, init_mongo_database_from_config,
 )
 
 cfg = read_config(Path("config.yml"))
 
-# Each returns a Callable; call it to create the actual connection
+# Low-level: each returns a Callable that creates the raw client
 redis = init_redis_from_config(cfg)()
-s3 = init_s3_from_config(cfg)()
-mongo = init_mongo_from_config(cfg)()
+s3_client = init_s3_from_config(cfg)()
+mongo_client = init_mongo_from_config(cfg)()
 llm = init_llm_from_config(cfg)()
+
+# High-level: returns workspace objects bound to bucket/db from config
+s3_writer, s3_reader, s3_deleter = init_s3_workspace_from_config(cfg)()
+db = init_mongo_database_from_config(cfg)()
 ```

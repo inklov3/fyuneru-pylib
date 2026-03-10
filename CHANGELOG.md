@@ -2,16 +2,19 @@
 
 ## 2026-03-10
 
-### 新增
+### 重构
 
-- **`mongo_toolkit.py`** — `init_client` 新增可选参数 `db: str | None = None`，指定后调用返回值直接得到对应 `Database` 而非裸 `MongoClient`，不指定则行为不变，向后兼容
-- **`config.py`** — `init_mongo_from_config` 透传配置中的 `db` 字段
+- **`mongo_toolkit.py`** — `init_client` 还原为只返回 `Callable[[], MongoClient]`，去掉 `db` 参数，与其他 toolkit 的 `init_*` 保持一致
+- **`config.py`** — 拆分为两层：
+  - 底层 `init_*_from_config`：返回裸客户端工厂（`init_s3_from_config` → `S3Client`，`init_mongo_from_config` → `MongoClient`）
+  - 高层 `init_*_workspace/database_from_config`：绑定配置中的 bucket/db，返回可直接使用的对象工厂
+    - `init_s3_workspace_from_config` — 必选 `bucket`，返回 `(writer, reader, deleter)` 工厂
+    - `init_mongo_database_from_config` — 必选 `db`，返回 `Database` 工厂
 
 ### 文档
 
-- **`README.md`** — MongoDB 示例补充指定 `db` 的用法
-- **`CLAUDE_GUIDE.md`** — `mongo_toolkit` API 签名更新；Config YAML Format 补充 `db` 字段
-- **`example.yml`** — mongo 段新增 `db` 可选字段示例
+- **`README.md`** / **`CLAUDE_GUIDE.md`** — 更新 API 签名和示例，体现两层 initializer 设计
+- **`example.yml`** — `s3.bucket` 和 `mongo.db` 标注为高层函数必选
 
 ## 2026-03-09
 

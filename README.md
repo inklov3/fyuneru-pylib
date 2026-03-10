@@ -79,21 +79,27 @@ from fyuneru.config import (
     init_s3_from_config,
     init_mongo_from_config,
     init_llm_from_config,
+    init_s3_workspace_from_config,
+    init_mongo_database_from_config,
 )
 
 cfg = read_config(Path("config.yml"))
 
-# 各函数返回 Callable，调用后才真正创建连接
+# 底层：各函数返回 Callable，调用后才真正创建连接
 # 配置段不存在时抛出 KeyError
 redis_getter = init_redis_from_config(cfg)   # 支持 standalone / cluster
-s3_getter = init_s3_from_config(cfg)
-mongo_getter = init_mongo_from_config(cfg)
+s3_getter = init_s3_from_config(cfg)         # 返回 S3Client
+mongo_getter = init_mongo_from_config(cfg)   # 返回 MongoClient
 llm_getter = init_llm_from_config(cfg)       # 目前支持 gemini
 
 redis = redis_getter()
-s3 = s3_getter()
-mongo = mongo_getter()
+s3_client = s3_getter()
+mongo_client = mongo_getter()
 llm = llm_getter()
+
+# 高层：绑定配置中的 bucket/db，返回可直接使用的对象工厂
+s3_writer, s3_reader, s3_deleter = init_s3_workspace_from_config(cfg)()
+db = init_mongo_database_from_config(cfg)()
 ```
 
 YAML 配置结构参考 [`example.yml`](example.yml)。
