@@ -6,22 +6,19 @@ from boto3 import Session
 from botocore.config import Config
 from botocore.response import StreamingBody
 from mypy_boto3_s3.client import S3Client
-from returns.result import safe
+from returns.result import ResultE, safe
 
 
 class ObjectStorageWriter(Protocol):
-    @safe
-    def __call__(self, key: str, body: bytes) -> None: ...
+    def __call__(self, key: str, body: bytes) -> ResultE[None]: ...
 
 
 class ObjectStorageReader(Protocol):
-    @safe
-    def __call__(self, key: str) -> bytes: ...
+    def __call__(self, key: str) -> ResultE[bytes]: ...
 
 
 class ObjectStorageDeleter(Protocol):
-    @safe
-    def __call__(self, key: str) -> None: ...
+    def __call__(self, key: str) -> ResultE[None]: ...
 
 
 def init_client(

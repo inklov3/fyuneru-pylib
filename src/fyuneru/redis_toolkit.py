@@ -7,7 +7,7 @@ from functools import partial
 from typing import Protocol
 
 from redis import Redis, RedisCluster
-from returns.result import safe
+from returns.result import ResultE, safe
 
 
 def init_client_standalone(
@@ -25,18 +25,15 @@ def calculate_checkpoint_key(checkpoint: str, task: str, worker: str) -> str:
 
 
 class RedisSetReader(Protocol):
-    @safe
-    def __call__(self, key: str) -> bool: ...
+    def __call__(self, key: str) -> ResultE[bool]: ...
 
 
 class RedisSetWriter(Protocol):
-    @safe
-    def __call__(self, key: str) -> None: ...
+    def __call__(self, key: str) -> ResultE[None]: ...
 
 
 class RedisSetDeleter(Protocol):
-    @safe
-    def __call__(self, key: str) -> None: ...
+    def __call__(self, key: str) -> ResultE[None]: ...
 
 
 def gen_redis_set(

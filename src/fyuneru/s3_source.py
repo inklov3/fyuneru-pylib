@@ -6,7 +6,7 @@ from collections.abc import Callable
 from pathlib import Path
 from urllib.parse import urlparse
 
-from returns.result import Result, safe
+from returns.result import ResultE, safe
 
 from fyuneru.config import read_config
 from fyuneru.s3_toolkit import ObjectStorageReader, gen_s3worker, init_client
@@ -41,8 +41,8 @@ def load_source_registry(config_path: Path) -> dict[str, dict]:
 
 def init_source_reader(
     registry: dict[str, dict],
-) -> Callable[[str], Result[bytes, Exception]]:
-    """返回一个闭包函数，接受 blob:// URI，返回 Result[bytes, Exception]。
+) -> Callable[[str], ResultE[bytes]]:
+    """返回一个闭包函数，接受 blob:// URI，返回 ResultE[bytes]。
     内部按需懒初始化 client + reader，缓存已创建的实例。"""
     readers: dict[str, ObjectStorageReader] = {}
 

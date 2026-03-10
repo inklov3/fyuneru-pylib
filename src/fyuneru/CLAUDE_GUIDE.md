@@ -120,9 +120,9 @@ init_client_cluster(host: str, port: int, **kwargs) -> Callable[[], RedisCluster
 gen_redis_set(client: Redis | RedisCluster, set_name: str)
     -> tuple[RedisSetWriter, RedisSetReader, RedisSetDeleter]
 # Returns (writer, reader, deleter) for Redis Set operations.
-# writer(key: str) -> Result[None, Exception]   — sadd
-# reader(key: str) -> Result[bool, Exception]   — sismember
-# deleter(key: str) -> Result[None, Exception]  — srem
+# writer(key: str) -> ResultE[None]   — sadd
+# reader(key: str) -> ResultE[bool]   — sismember
+# deleter(key: str) -> ResultE[None]  — srem
 
 calculate_checkpoint_key(checkpoint: str, task: str, worker: str) -> str
 # Returns "{worker}:{task}:checkpoint:{checkpoint}"
@@ -154,9 +154,9 @@ init_client(
 
 gen_s3worker(client: S3Client, bucket: str)
     -> tuple[ObjectStorageWriter, ObjectStorageReader, ObjectStorageDeleter]
-# writer(key: str, body: bytes) -> Result[None, Exception]  — put_object
-# reader(key: str) -> Result[bytes, Exception]               — get_object
-# deleter(key: str) -> Result[None, Exception]               — delete_object
+# writer(key: str, body: bytes) -> ResultE[None]  — put_object
+# reader(key: str) -> ResultE[bytes]               — get_object
+# deleter(key: str) -> ResultE[None]               — delete_object
 ```
 
 ### s3_source (`fyuneru.s3_source`)
@@ -175,7 +175,7 @@ parse_blob_uri(uri: str) -> tuple[str, str]
 load_source_registry(config_path: Path) -> dict[str, dict]
 # Reads config["s3_sources"] list, converts to dict keyed by source_id.
 
-init_source_reader(registry: dict[str, dict]) -> Callable[[str], Result[bytes, Exception]]
+init_source_reader(registry: dict[str, dict]) -> Callable[[str], ResultE[bytes]]
 # Returns a closure that reads from blob:// URIs.
 # Lazily initializes S3 clients per bucket_id, caches them.
 ```
