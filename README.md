@@ -178,7 +178,7 @@ data = result.unwrap()
 ```python
 from fyuneru.redis_toolkit import init_client_standalone, gen_redis_set, calculate_checkpoint_key
 
-redis_getter = init_client_standalone(host="localhost", port=6379, db=0)
+redis_getter = init_client_standalone(host="localhost", port=6379, db=0, password="secret")
 redis = redis_getter()
 
 # Set 操作

@@ -28,12 +28,18 @@ def init_redis_from_config(config: dict) -> Callable:
     from fyuneru import redis_toolkit
 
     redis_cfg = config["redis"]
+    extra: dict = {}
+    if "password" in redis_cfg:
+        extra["password"] = redis_cfg["password"]
     if redis_cfg.get("cluster", False):
         return redis_toolkit.init_client_cluster(
-            host=redis_cfg["host"], port=redis_cfg["port"]
+            host=redis_cfg["host"], port=redis_cfg["port"], **extra
         )
     return redis_toolkit.init_client_standalone(
-        host=redis_cfg["host"], port=redis_cfg["port"], db=redis_cfg.get("db", 0)
+        host=redis_cfg["host"],
+        port=redis_cfg["port"],
+        db=redis_cfg.get("db", 0),
+        **extra,
     )
 
 

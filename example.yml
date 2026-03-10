@@ -3,6 +3,7 @@ redis:
   port: 6379
   db: 0
   cluster: false  # 可选，默认 false
+  password: xxx  # 可选，无密码时省略
 
 s3:
   endpoint: https://s3.example.com

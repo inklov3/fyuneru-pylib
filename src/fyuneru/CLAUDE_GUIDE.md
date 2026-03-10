@@ -55,6 +55,7 @@ read_config(config: Path) -> dict[str, list | dict]
 
 init_redis_from_config(config: dict) -> Callable
 # Reads config["redis"]. Supports standalone (default) and cluster mode.
+# Optional "password" field is forwarded to the Redis client.
 # Raises KeyError if "redis" section missing.
 
 init_s3_from_config(config: dict) -> Callable
@@ -285,6 +286,7 @@ redis:
   port: 6379
   db: 0             # optional, default 0
   cluster: false     # optional, default false
+  password: xxx      # optional, omit if no auth
 
 s3:
   endpoint: https://s3.example.com

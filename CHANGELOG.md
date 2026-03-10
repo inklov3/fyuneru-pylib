@@ -2,6 +2,10 @@
 
 ## 2026-03-10
 
+### 功能
+
+- **`config.py`** — `init_redis_from_config` 支持可选 `password` 字段，透传至 Redis 客户端
+
 ### 重构
 
 - **`mongo_toolkit.py`** — `init_client` 还原为只返回 `Callable[[], MongoClient]`，去掉 `db` 参数，与其他 toolkit 的 `init_*` 保持一致
