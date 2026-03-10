@@ -51,9 +51,7 @@ def init_client(
 
 def gen_s3worker(
     client: S3Client, bucket: str
-) -> tuple[
-    ObjectStorageWriter, ObjectStorageReader, ObjectStorageDeleter
-]:
+) -> tuple[ObjectStorageWriter, ObjectStorageReader, ObjectStorageDeleter]:
     @safe
     def write_object(key: str, body: bytes) -> None:
         client.put_object(Bucket=bucket, Key=key, Body=body)

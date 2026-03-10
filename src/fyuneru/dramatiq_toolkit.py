@@ -9,9 +9,7 @@ def calculate_namespace(worker: str, task: str) -> str:
     return f"{worker}:{{{task}}}"
 
 
-def init_broker(
-    redis_client: Redis | RedisCluster, namespace: str
-) -> Broker:
+def init_broker(redis_client: Redis | RedisCluster, namespace: str) -> Broker:
     if isinstance(redis_client, RedisCluster):
         from os import environ
 

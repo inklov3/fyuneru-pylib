@@ -16,15 +16,11 @@ def init_client_standalone(
     return partial(Redis, host=host, port=port, db=db, **kwargs)
 
 
-def init_client_cluster(
-    host: str, port: int, **kwargs
-) -> Callable[[], RedisCluster]:
+def init_client_cluster(host: str, port: int, **kwargs) -> Callable[[], RedisCluster]:
     return partial(RedisCluster, host=host, port=port, **kwargs)
 
 
-def calculate_checkpoint_key(
-    checkpoint: str, task: str, worker: str
-) -> str:
+def calculate_checkpoint_key(checkpoint: str, task: str, worker: str) -> str:
     return f"{worker}:{task}:checkpoint:{checkpoint}"
 
 
@@ -60,5 +56,3 @@ def gen_redis_set(
         client.srem(set_name, key)
 
     return set_writer, set_reader, set_deleter
-
-
