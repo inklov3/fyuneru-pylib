@@ -12,6 +12,7 @@ s3:
 
 mongo:
   uri: mongodb://localhost:27017
+  db: my_database  # 可选，指定后直接返回 Database
   timeout: 10000  # 可选
 
 llm:

@@ -192,9 +192,14 @@ assert is_past("item-001").unwrap() is True
 ```python
 from fyuneru.mongo_toolkit import init_client
 
+# 不指定 db：返回 MongoClient
 mongo_getter = init_client(uri="mongodb://localhost:27017")
 client = mongo_getter()
 db = client["my_database"]
+
+# 指定 db：调用后直接返回 Database
+db_getter = init_client(uri="mongodb://localhost:27017", db="my_database")
+db = db_getter()
 ```
 
 ### 分布式任务

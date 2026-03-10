@@ -60,7 +60,8 @@ init_s3_from_config(config: dict) -> Callable
 # Reads config["s3"]. Raises KeyError if "s3" section missing.
 
 init_mongo_from_config(config: dict) -> Callable
-# Reads config["mongo"]. Raises KeyError if "mongo" section missing.
+# Reads config["mongo"]. Passes "db" to init_client when present.
+# Raises KeyError if "mongo" section missing.
 
 init_llm_from_config(config: dict) -> Callable
 # Reads config["llm"]. Currently only supports provider="gemini".
@@ -199,8 +200,11 @@ Requires: `fyuneru[mongo]`
 ```python
 from fyuneru.mongo_toolkit import init_client
 
-init_client(uri: str, timeout: int = 10000) -> Callable[[], MongoClient]
+init_client(uri: str, timeout: int = 10000, db: str | None = None)
+    -> Callable[[], MongoClient] | Callable[[], Database]
 # timeout is serverSelectionTimeoutMS
+# When db is specified, the returned callable yields a Database directly.
+# When db is None (default), returns a MongoClient.
 ```
 
 ### dramatiq_toolkit (`fyuneru.dramatiq_toolkit`)
@@ -281,6 +285,7 @@ s3:
 
 mongo:
   uri: mongodb://localhost:27017
+  db: my_database   # optional, returns Database directly when set
   timeout: 10000    # optional, default 10000
 
 llm:

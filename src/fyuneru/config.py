@@ -50,6 +50,8 @@ def init_mongo_from_config(config: dict) -> Callable:
     kwargs = {"uri": mongo_cfg["uri"]}
     if "timeout" in mongo_cfg:
         kwargs["timeout"] = mongo_cfg["timeout"]
+    if "db" in mongo_cfg:
+        kwargs["db"] = mongo_cfg["db"]
     return mongo_toolkit.init_client(**kwargs)
 
 

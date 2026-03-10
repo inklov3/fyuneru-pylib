@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-03-10
+
+### 新增
+
+- **`mongo_toolkit.py`** — `init_client` 新增可选参数 `db: str | None = None`，指定后调用返回值直接得到对应 `Database` 而非裸 `MongoClient`，不指定则行为不变，向后兼容
+- **`config.py`** — `init_mongo_from_config` 透传配置中的 `db` 字段
+
+### 文档
+
+- **`README.md`** — MongoDB 示例补充指定 `db` 的用法
+- **`CLAUDE_GUIDE.md`** — `mongo_toolkit` API 签名更新；Config YAML Format 补充 `db` 字段
+- **`example.yml`** — mongo 段新增 `db` 可选字段示例
+
 ## 2026-03-09
 
 ### 新增
