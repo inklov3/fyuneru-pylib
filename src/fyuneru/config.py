@@ -4,8 +4,22 @@
 
 from collections.abc import Callable
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from yaml import safe_load
+
+if TYPE_CHECKING:
+    from google.genai import Client
+    from mypy_boto3_s3.client import S3Client
+    from pymongo import MongoClient
+    from pymongo.database import Database
+    from redis import Redis, RedisCluster
+
+    from fyuneru.s3_toolkit import (
+        ObjectStorageDeleter,
+        ObjectStorageReader,
+        ObjectStorageWriter,
+    )
 
 
 def read_config(config: Path) -> dict[str, list | dict]:
@@ -20,7 +34,9 @@ def read_config(config: Path) -> dict[str, list | dict]:
 # ---------------------------------------------------------------------------
 
 
-def init_redis_from_config(config: dict) -> Callable:
+def init_redis_from_config(
+    config: dict,
+) -> Callable[[], "Redis"] | Callable[[], "RedisCluster"]:
     """从 'redis' 段构建 redis client initializer。
 
     返回 Callable[[], Redis] 或 Callable[[], RedisCluster]。
@@ -43,11 +59,8 @@ def init_redis_from_config(config: dict) -> Callable:
     )
 
 
-def init_s3_from_config(config: dict) -> Callable:
-    """从 's3' 段构建 s3 client initializer。
-
-    返回 Callable[[], S3Client]。
-    """
+def init_s3_from_config(config: dict) -> Callable[[], "S3Client"]:
+    """从 's3' 段构建 s3 client initializer。"""
     from fyuneru import s3_toolkit
 
     s3_cfg = config["s3"]
@@ -59,11 +72,8 @@ def init_s3_from_config(config: dict) -> Callable:
     )
 
 
-def init_mongo_from_config(config: dict) -> Callable:
-    """从 'mongo' 段构建 mongo client initializer。
-
-    返回 Callable[[], MongoClient]。
-    """
+def init_mongo_from_config(config: dict) -> Callable[[], "MongoClient"]:
+    """从 'mongo' 段构建 mongo client initializer。"""
     from fyuneru import mongo_toolkit
 
     mongo_cfg = config["mongo"]
@@ -73,11 +83,8 @@ def init_mongo_from_config(config: dict) -> Callable:
     return mongo_toolkit.init_client(**kwargs)
 
 
-def init_llm_from_config(config: dict) -> Callable:
-    """从 'llm' 段构建 LLM client initializer。
-
-    返回 Callable[[], Client]。
-    """
+def init_llm_from_config(config: dict) -> Callable[[], "Client"]:
+    """从 'llm' 段构建 LLM client initializer。目前支持 gemini。"""
     llm_cfg = config["llm"]
     provider = llm_cfg["provider"]
     if provider == "gemini":
@@ -96,11 +103,14 @@ def init_llm_from_config(config: dict) -> Callable:
 # ---------------------------------------------------------------------------
 
 
-def init_s3_workspace_from_config(config: dict) -> Callable:
+def init_s3_workspace_from_config(
+    config: dict,
+) -> Callable[
+    [], tuple["ObjectStorageWriter", "ObjectStorageReader", "ObjectStorageDeleter"]
+]:
     """从 's3' 段构建 s3 workspace initializer。
 
     's3' 段必须包含 'bucket' 字段。
-    返回 Callable[[], tuple[ObjectStorageWriter, ObjectStorageReader, ObjectStorageDeleter]]。
     """
     from fyuneru import s3_toolkit
 
@@ -115,11 +125,10 @@ def init_s3_workspace_from_config(config: dict) -> Callable:
     return lambda: s3_toolkit.gen_s3worker(init(), bucket)
 
 
-def init_mongo_database_from_config(config: dict) -> Callable:
+def init_mongo_database_from_config(config: dict) -> Callable[[], "Database"]:
     """从 'mongo' 段构建 MongoDB Database initializer。
 
     'mongo' 段必须包含 'db' 字段。
-    返回 Callable[[], Database]。
     """
     from fyuneru import mongo_toolkit
 
