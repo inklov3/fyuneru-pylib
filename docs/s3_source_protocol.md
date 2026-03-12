@@ -41,6 +41,19 @@ s3_sources:
 | `secret_access_key` | 是 | 访问密钥 |
 | `region_name` | 否 | 区域名称 |
 
+### Pod YAML 增量覆盖
+
+`load_source_registry` 支持传入 `override_path`，用于 `base.yml + pod.yml` 场景：
+
+```python
+registry = load_source_registry(
+    config_path=Path("config.yml"),
+    override_path=Path("pod.yml"),
+)
+```
+
+合并时 `s3_sources` 列表先按追加处理，再按 `source_id` 去重；若重复，后者覆盖前者（即 Pod 层生效）。
+
 ## 解析流程
 
 1. 解析 URI → 提取桶id + 对象key

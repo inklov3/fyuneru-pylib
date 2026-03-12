@@ -1,6 +1,9 @@
 """测试 s3_source 模块的 URI 解析功能"""
 
-from fyuneru.s3_source import parse_blob_uri
+from pathlib import Path
+from tempfile import TemporaryDirectory
+
+from fyuneru.s3_source import load_source_registry, parse_blob_uri
 
 
 def test_parse_blob_uri_normal():
@@ -47,6 +50,54 @@ def test_parse_blob_uri_no_key():
         assert "不能为空" in str(e)
 
 
+def test_load_source_registry_with_override():
+    with TemporaryDirectory() as tmp:
+        base_path = Path(tmp) / "base.yml"
+        override_path = Path(tmp) / "pod.yml"
+
+        base_path.write_text(
+            """
+s3_sources:
+- source_id: my-images
+  endpoint: https://base-s3.example.com
+  bucket: base-bucket
+  access_key_id: base-ak
+  secret_access_key: base-sk
+
+- source_id: archive
+  endpoint: https://archive.example.com
+  bucket: archive-bucket
+  access_key_id: archive-ak
+  secret_access_key: archive-sk
+""",
+            encoding="utf-8",
+        )
+
+        override_path.write_text(
+            """
+s3_sources:
+- source_id: my-images
+  endpoint: https://pod-s3.example.com
+  bucket: pod-bucket
+  access_key_id: pod-ak
+  secret_access_key: pod-sk
+
+- source_id: backup
+  endpoint: https://backup.example.com
+  bucket: backup-bucket
+  access_key_id: backup-ak
+  secret_access_key: backup-sk
+""",
+            encoding="utf-8",
+        )
+
+        registry = load_source_registry(base_path, override_path)
+        assert set(registry.keys()) == {"my-images", "archive", "backup"}
+        assert registry["my-images"]["bucket"] == "pod-bucket"
+        assert registry["archive"]["bucket"] == "archive-bucket"
+        assert registry["backup"]["bucket"] == "backup-bucket"
+
+
 if __name__ == "__main__":
     test_parse_blob_uri_normal()
     test_parse_blob_uri_simple_key()
@@ -54,4 +105,5 @@ if __name__ == "__main__":
     test_parse_blob_uri_empty_bucket()
     test_parse_blob_uri_empty_key()
     test_parse_blob_uri_no_key()
+    test_load_source_registry_with_override()
     print("所有 parse_blob_uri 测试通过")

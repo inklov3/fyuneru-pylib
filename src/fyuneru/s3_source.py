@@ -8,7 +8,7 @@ from urllib.parse import urlparse
 
 from returns.result import ResultE, safe
 
-from fyuneru.config import read_config
+from fyuneru.config import read_config_with_override
 from fyuneru.s3_toolkit import ObjectStorageReader, gen_s3worker, init_client
 
 BLOB_SCHEME = "blob"
@@ -26,9 +26,12 @@ def parse_blob_uri(uri: str) -> tuple[str, str]:
     return bucket_id, key
 
 
-def load_source_registry(config_path: Path) -> dict[str, dict]:
+def load_source_registry(
+    config_path: Path,
+    override_path: Path | None = None,
+) -> dict[str, dict]:
     """从配置文件的 s3_sources 段加载源列表，转为以 source_id 为 key 的字典。"""
-    config = read_config(config_path)
+    config = read_config_with_override(config_path, override_path)
     sources = config["s3_sources"]
     registry: dict[str, dict] = {}
     for source in sources:

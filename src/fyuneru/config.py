@@ -4,7 +4,7 @@
 
 from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from yaml import safe_load
 
@@ -22,11 +22,70 @@ if TYPE_CHECKING:
     )
 
 
-def read_config(config: Path) -> dict[str, list | dict]:
+def _read_yaml_mapping(config: Path) -> dict[str, Any]:
     suffix = config.suffix
-    if suffix in (".yaml", ".yml"):
-        return safe_load(config.read_text(encoding="utf-8"))
-    raise ValueError(f"不支持的配置文件格式: {suffix}")
+    if suffix not in (".yaml", ".yml"):
+        raise ValueError(f"不支持的配置文件格式: {suffix}")
+    loaded = safe_load(config.read_text(encoding="utf-8"))
+    if loaded is None:
+        return {}
+    if not isinstance(loaded, dict):
+        raise ValueError("配置文件根节点必须是对象映射")
+    return loaded
+
+
+def read_config(config: Path) -> dict[str, list | dict]:
+    return _read_yaml_mapping(config)
+
+
+def _merge_s3_sources(sources: list[Any]) -> list[dict[str, Any]]:
+    deduped: dict[str, dict[str, Any]] = {}
+    for source in sources:
+        if not isinstance(source, dict):
+            raise ValueError("s3_sources 的每个条目都必须是对象")
+        source_id = source.get("source_id")
+        if not isinstance(source_id, str) or not source_id:
+            raise ValueError("s3_sources.source_id 必须是非空字符串")
+        deduped[source_id] = source
+    return list(deduped.values())
+
+
+def _merge_config_value(base: Any, override: Any, path: tuple[str, ...]) -> Any:
+    if isinstance(base, dict) and isinstance(override, dict):
+        merged = dict(base)
+        for key, override_value in override.items():
+            key_name = str(key)
+            next_path = (*path, key_name)
+            if key in merged:
+                merged[key] = _merge_config_value(merged[key], override_value, next_path)
+            else:
+                merged[key] = _merge_config_value(None, override_value, next_path)
+        return merged
+
+    if isinstance(override, list) and path and path[-1] == "s3_sources":
+        if isinstance(base, list):
+            return _merge_s3_sources([*base, *override])
+        return _merge_s3_sources([*override])
+
+    if isinstance(base, list) and isinstance(override, list):
+        return [*base, *override]
+
+    return override
+
+
+def read_config_with_override(
+    base: Path,
+    override: Path | None = None,
+) -> dict[str, Any]:
+    """读取 base 配置，并可选叠加一层 override 配置。"""
+    base_config = _read_yaml_mapping(base)
+    if override is None:
+        return base_config
+    override_config = _read_yaml_mapping(override)
+    merged = _merge_config_value(base_config, override_config, ())
+    if not isinstance(merged, dict):
+        raise ValueError("合并后的配置根节点必须是对象映射")
+    return merged
 
 
 # ---------------------------------------------------------------------------

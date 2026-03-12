@@ -1,5 +1,26 @@
 # Changelog
 
+## 2026-03-12
+
+### 新增
+
+- **`config.py`** — 新增 `read_config_with_override(base, override)`，支持单层 YAML 增量覆盖
+  - `dict` 递归合并
+  - 标量后者覆盖
+  - `list` 默认追加
+  - `s3_sources` 特例按 `source_id` 去重，重复时后者覆盖
+- **`s3_source.py`** — `load_source_registry` 增加 `override_path` 参数，复用配置覆盖逻辑
+
+### 测试
+
+- **`test/test_config.py`** — 新增配置增量覆盖测试
+- **`test/test_s3_source.py`** — 新增 `load_source_registry(base, override)` 用例
+
+### 文档
+
+- **`README.md`** — 新增 Pod YAML 增量覆盖说明、规则与非目标说明
+- **`docs/s3_source_protocol.md`** — 增补 `override_path` 使用方式与 `s3_sources` 冲突规则
+
 ## 2026-03-10
 
 ### 功能
