@@ -5,15 +5,15 @@ Python utility library wrapping common infrastructure components with unified, c
 ## Installation
 
 ```bash
-uv add fyuneru@git+https://github.com/znklov3/fyuneru.git
+uv add fyuneru@git+https://github.com/inklov3/fyuneru-pylib.git
 
 # With optional dependencies
-uv add "fyuneru[redis] @ git+https://github.com/znklov3/fyuneru.git"
-uv add "fyuneru[s3] @ git+https://github.com/znklov3/fyuneru.git"
-uv add "fyuneru[mongo] @ git+https://github.com/znklov3/fyuneru.git"
-uv add "fyuneru[pipeline] @ git+https://github.com/znklov3/fyuneru.git"   # Redis + S3 + Dramatiq + MongoDB
-uv add "fyuneru[media] @ git+https://github.com/znklov3/fyuneru.git"      # av + Pillow
-uv add "fyuneru[gemini] @ git+https://github.com/znklov3/fyuneru.git"     # Google Gemini
+uv add "fyuneru[redis] @ git+https://github.com/inklov3/fyuneru-pylib.git"
+uv add "fyuneru[s3] @ git+https://github.com/inklov3/fyuneru-pylib.git"
+uv add "fyuneru[mongo] @ git+https://github.com/inklov3/fyuneru-pylib.git"
+uv add "fyuneru[pipeline] @ git+https://github.com/inklov3/fyuneru-pylib.git"   # Redis + S3 + Dramatiq + MongoDB
+uv add "fyuneru[media] @ git+https://github.com/inklov3/fyuneru-pylib.git"      # av + Pillow
+uv add "fyuneru[gemini] @ git+https://github.com/inklov3/fyuneru-pylib.git"     # Google Gemini
 ```
 
 ## Key Patterns
@@ -48,10 +48,21 @@ from fyuneru.config import (
     read_config, init_redis_from_config, init_s3_from_config,
     init_mongo_from_config, init_llm_from_config,
     init_s3_workspace_from_config, init_mongo_database_from_config,
+    read_config_with_override,
 )
 
 read_config(config: Path) -> dict[str, list | dict]
-# Reads YAML config file (.yaml/.yml only). Raises ValueError for other formats.
+# Reads YAML config file (.yaml/.yml only). Empty file returns {}.
+# Raises ValueError for unsupported formats or non-mapping root.
+
+read_config_with_override(base: Path, override: Path | None = None) -> dict[str, Any]
+# Reads base config and optionally overlays one override YAML.
+# Merge rules:
+# - dict: recursive merge, override value wins on key conflict
+# - scalar: override replaces base
+# - list: append (base + override)
+# - special case s3_sources: dedupe by source_id, later item wins
+# Non-goals: no template rendering, no field deletion semantics.
 
 init_redis_from_config(config: dict) -> Callable
 # Reads config["redis"]. Supports standalone (default) and cluster mode.
@@ -172,8 +183,12 @@ parse_blob_uri(uri: str) -> tuple[str, str]
 # Parses "blob://bucket_id/key" -> (bucket_id, key).
 # Raises ValueError for invalid format.
 
-load_source_registry(config_path: Path) -> dict[str, dict]
+load_source_registry(
+    config_path: Path,
+    override_path: Path | None = None,
+) -> dict[str, dict]
 # Reads config["s3_sources"] list, converts to dict keyed by source_id.
+# When override_path is provided, config is loaded via read_config_with_override.
 
 init_source_reader(registry: dict[str, dict]) -> Callable[[str], ResultE[bytes]]
 # Returns a closure that reads from blob:// URIs.
@@ -182,12 +197,22 @@ init_source_reader(registry: dict[str, dict]) -> Callable[[str], ResultE[bytes]]
 
 **Usage:**
 ```python
+# base only
 registry = load_source_registry(Path("config.yml"))
+
+# base + pod override
+registry = load_source_registry(
+    config_path=Path("config.yml"),
+    override_path=Path("pod.yml"),
+)
 read = init_source_reader(registry)
 data = read("blob://my-images/photos/img001.jpg").unwrap()
 ```
 
-**Config format (`.s3_source.yml`):**
+**Overlay note:**
+- For `s3_sources`, merge behavior is append + dedupe by `source_id` (later item wins).
+
+**Config format (main YAML `s3_sources` section):**
 ```yaml
 s3_sources:
 - source_id: my-images
@@ -214,7 +239,7 @@ from fyuneru.mongo_toolkit import init_client
 init_client(uri: str, timeout: int = 10000)
     -> Callable[[], MongoClient]
 # timeout is serverSelectionTimeoutMS
-# When db is None (default), returns a MongoClient.
+# Always returns a MongoClient initializer.
 ```
 
 ### dramatiq_toolkit (`fyuneru.dramatiq_toolkit`)
@@ -296,7 +321,7 @@ s3:
 
 mongo:
   uri: mongodb://localhost:27017
-  db: my_database   # optional, returns Database directly when set
+  db: my_database   # required by init_mongo_database_from_config
   timeout: 10000    # optional, default 10000
 
 llm:
@@ -322,17 +347,22 @@ from fyuneru.config import (
     read_config, init_redis_from_config, init_s3_from_config,
     init_mongo_from_config, init_llm_from_config,
     init_s3_workspace_from_config, init_mongo_database_from_config,
+    read_config_with_override,
 )
 
 cfg = read_config(Path("config.yml"))
+cfg_with_pod = read_config_with_override(
+    base=Path("config.yml"),
+    override=Path("pod.yml"),
+)
 
 # Low-level: each returns a Callable that creates the raw client
-redis = init_redis_from_config(cfg)()
-s3_client = init_s3_from_config(cfg)()
-mongo_client = init_mongo_from_config(cfg)()
-llm = init_llm_from_config(cfg)()
+redis = init_redis_from_config(cfg_with_pod)()
+s3_client = init_s3_from_config(cfg_with_pod)()
+mongo_client = init_mongo_from_config(cfg_with_pod)()
+llm = init_llm_from_config(cfg_with_pod)()
 
 # High-level: returns workspace objects bound to bucket/db from config
-s3_writer, s3_reader, s3_deleter = init_s3_workspace_from_config(cfg)()
-db = init_mongo_database_from_config(cfg)()
+s3_writer, s3_reader, s3_deleter = init_s3_workspace_from_config(cfg_with_pod)()
+db = init_mongo_database_from_config(cfg_with_pod)()
 ```

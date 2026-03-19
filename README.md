@@ -24,7 +24,7 @@
 以下示例默认使用 GitHub 源安装：
 
 ```bash
-uv add fyuneru@git+https://github.com/znklov3/fyuneru.git
+uv add fyuneru@git+https://github.com/inklov3/fyuneru-pylib.git
 ```
 
 按需启用可选依赖：
@@ -42,7 +42,7 @@ uv add fyuneru@git+https://github.com/znklov3/fyuneru.git
 例如：
 
 ```bash
-uv add "fyuneru[redis,s3] @ git+https://github.com/znklov3/fyuneru.git"
+uv add "fyuneru[redis,s3] @ git+https://github.com/inklov3/fyuneru-pylib.git"
 ```
 
 任何依赖可选第三方包的模块都应先安装对应 extra，例如 `fyuneru.redis_toolkit`、`fyuneru.s3_toolkit`、`fyuneru.mongo_toolkit`、`fyuneru.dramatiq_toolkit`、`fyuneru.gemini_toolkit`。
@@ -278,20 +278,24 @@ uv sync --group dev
 uv sync --group dev --extra redis --extra s3 --extra mongo --extra gemini --extra pipeline --extra media
 ```
 
-常用检查命令：
+发布前检查：
 
 ```bash
-uv run ruff check src/
-uv run pyrefly check src/
+./pre_release.sh
 ```
 
-当前仓库测试通过脚本执行，不是 pytest 工作流：
+脚本会先同步完整开发/可选依赖，再顺序执行：
 
 ```bash
+uv sync --group dev --extra redis --extra s3 --extra mongo --extra gemini --extra pipeline --extra media
+uv run ruff check src/
+uv run pyrefly check src/
 uv run python test/test_s3_source.py
 uv run python test/test_logger.py
 uv run python test/test_config.py
 ```
+
+当前仓库测试通过脚本执行，不是 pytest 工作流。
 
 包源码位于 `src/fyuneru/`。
 

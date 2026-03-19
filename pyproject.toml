@@ -47,8 +47,10 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.ruff]
-select = ["I"]
 line-length = 88
+
+[tool.ruff.lint]
+select = ["I"]
 
 [tool.ruff.format]
 quote-style = "double"

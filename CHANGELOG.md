@@ -38,7 +38,7 @@
 
 ### 文档
 
-- **`README.md`** / **`CLAUDE_GUIDE.md`** — 更新 API 签名和示例，体现两层 initializer 设计
+- **`README.md`** / **`GUIDE.md`** — 更新 API 签名和示例，体现两层 initializer 设计
 - **`example.yml`** — `s3.bucket` 和 `mongo.db` 标注为高层函数必选
 
 ## 2026-03-09
@@ -56,7 +56,7 @@
 - **`example.yml`** — 新增 `s3_sources` 多源配置示例
 - **`README.md`** — 模块概览新增 `s3_source`；快速上手新增多源读取示例
 - **`CLAUDE.md`** — Module Layout 新增 `s3_source.py`；修正 `config.py` 依赖描述
-- **`CLAUDE_GUIDE.md`** — 新增 `s3_source` API 参考
+- **`GUIDE.md`** — 新增 `s3_source` API 参考
 
 ### 测试
 

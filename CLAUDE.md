@@ -62,6 +62,6 @@ Checkpoints are implemented by composing `calculate_checkpoint_key()` + `gen_red
 
 - Language: Code in English, docstrings/comments in Chinese
 - Commit messages: Chinese, prefixed with type (`fix:`, `refactor:`, `feat:`, `doc:`)
-- Ruff config: import sorting (`select = ["I"]`), double quotes, 88 char line length
+- Ruff config: import sorting (`lint.select = ["I"]`), double quotes, 88 char line length
 - No `__init__.py` exports — users import directly from submodules
 - Optional dependencies are grouped in `pyproject.toml` under `[project.optional-dependencies]`
