@@ -21,6 +21,14 @@ class ObjectStorageDeleter(Protocol):
     def __call__(self, key: str) -> ResultE[None]: ...
 
 
+class ObjectStorageLister(Protocol):
+    def __call__(
+        self,
+        prefix: str,
+        suffix: str | None = None,
+    ) -> ResultE[list[str]]: ...
+
+
 def init_client(
     endpoint: str,
     access_key_id: str,
@@ -46,13 +54,15 @@ def init_client(
     )
 
 
-def gen_s3worker(
-    client: S3Client, bucket: str
-) -> tuple[ObjectStorageWriter, ObjectStorageReader, ObjectStorageDeleter]:
+def gen_s3writer(client: S3Client, bucket: str) -> ObjectStorageWriter:
     @safe
     def write_object(key: str, body: bytes) -> None:
         client.put_object(Bucket=bucket, Key=key, Body=body)
 
+    return write_object
+
+
+def gen_s3reader(client: S3Client, bucket: str) -> ObjectStorageReader:
     @safe
     def read_object(key: str) -> bytes:
         response = client.get_object(Bucket=bucket, Key=key)
@@ -61,8 +71,37 @@ def gen_s3worker(
         body.close()
         return byte_s
 
+    return read_object
+
+
+def gen_s3deleter(client: S3Client, bucket: str) -> ObjectStorageDeleter:
     @safe
     def delete_object(key: str) -> None:
         client.delete_object(Bucket=bucket, Key=key)
 
-    return write_object, read_object, delete_object
+    return delete_object
+
+
+def gen_s3lister(client: S3Client, bucket: str) -> ObjectStorageLister:
+    @safe
+    def list_objects(prefix: str, suffix: str | None = None) -> list[str]:
+        keys: list[str] = []
+        continuation_token: str | None = None
+        while True:
+            kwargs: dict = {"Bucket": bucket, "Prefix": prefix}
+            if continuation_token is not None:
+                kwargs["ContinuationToken"] = continuation_token
+            response = client.list_objects_v2(**kwargs)
+            for obj in response.get("Contents", []):
+                key: str = obj["Key"]
+                if key.endswith("/"):
+                    continue
+                if suffix is not None and not key.endswith(suffix):
+                    continue
+                keys.append(key)
+            if not response.get("IsTruncated", False):
+                break
+            continuation_token = response["NextContinuationToken"]
+        return keys
+
+    return list_objects

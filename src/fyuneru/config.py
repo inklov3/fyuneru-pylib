@@ -57,7 +57,9 @@ def _merge_config_value(base: Any, override: Any, path: tuple[str, ...]) -> Any:
             key_name = str(key)
             next_path = (*path, key_name)
             if key in merged:
-                merged[key] = _merge_config_value(merged[key], override_value, next_path)
+                merged[key] = _merge_config_value(
+                    merged[key], override_value, next_path
+                )
             else:
                 merged[key] = _merge_config_value(None, override_value, next_path)
         return merged
@@ -181,7 +183,16 @@ def init_s3_workspace_from_config(
         region_name=s3_cfg.get("region_name"),
     )
     bucket = s3_cfg["bucket"]
-    return lambda: s3_toolkit.gen_s3worker(init(), bucket)
+
+    def create_workspace():
+        client = init()
+        return (
+            s3_toolkit.gen_s3writer(client, bucket),
+            s3_toolkit.gen_s3reader(client, bucket),
+            s3_toolkit.gen_s3deleter(client, bucket),
+        )
+
+    return create_workspace
 
 
 def init_mongo_database_from_config(config: dict) -> Callable[[], "Database"]:

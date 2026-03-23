@@ -1,5 +1,21 @@
 # Changelog
 
+## 2026-03-23
+
+### 重构
+
+- **`s3_toolkit.py`** — 拆分 `gen_s3worker` 为 `gen_s3writer` / `gen_s3reader` / `gen_s3deleter` 三个独立函数，各自返回单一操作闭包；删除 `gen_s3worker`
+- **`config.py`** — `init_s3_workspace_from_config` 内部改用拆分后的三个函数组装 tuple
+- **`s3_source.py`** — 改用 `gen_s3reader` 直接获取 reader，消除元组解构
+
+### 新增
+
+- **`s3_toolkit.py`** — 新增 `gen_s3lister`，支持按前缀列举对象 key（自动分页 + 可选后缀过滤）；新增 `ObjectStorageLister` Protocol
+
+### 文档
+
+- **`README.md`** / **`GUIDE.md`** — 更新 S3 示例和 API 签名，体现拆分后的独立函数设计
+
 ## 2026-03-12
 
 ### 新增

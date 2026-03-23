@@ -33,7 +33,7 @@ uv add fyuneru@git+https://github.com/inklov3/fyuneru-pylib.git
 | --- | --- | --- |
 | 默认安装 | 日志、YAML 配置、pickle/JSON 转换、Markdown 工具 | `logger`、`config`、`converter`、`markdown_utils` |
 | `fyuneru[redis]` | Redis client、Set 封装、checkpoint key 计算 | `redis_toolkit`、`config.init_redis_from_config` |
-| `fyuneru[s3]` | S3 client、对象读写删除、多源 `blob://` 读取 | `s3_toolkit`、`s3_source`、`config.init_s3_from_config`、`config.init_s3_workspace_from_config` |
+| `fyuneru[s3]` | S3 client、对象读写删除列举、多源 `blob://` 读取 | `s3_toolkit`、`s3_source`、`config.init_s3_from_config`、`config.init_s3_workspace_from_config` |
 | `fyuneru[mongo]` | MongoClient 惰性初始化与按配置获取 `Database` | `mongo_toolkit`、`config.init_mongo_from_config`、`config.init_mongo_database_from_config` |
 | `fyuneru[gemini]` | Google Gemini client 与结构化 JSON 输出配置 | `gemini_toolkit`、`config.init_llm_from_config` |
 | `fyuneru[pipeline]` | Redis + S3 + Dramatiq + MongoDB 的组合依赖 | `dramatiq_toolkit` 及 `redis` / `s3` / `mongo` 相关模块 |
@@ -56,7 +56,7 @@ uv add "fyuneru[redis,s3] @ git+https://github.com/inklov3/fyuneru-pylib.git"
 | `fyuneru.converter` | pickle 字节互转、任意对象转 JSON 兼容结构 | 默认安装 |
 | `fyuneru.markdown_utils` | 去掉 Markdown 代码块包裹，保留正文 | 默认安装 |
 | `fyuneru.redis_toolkit` | Redis / RedisCluster 惰性初始化、Set 操作、checkpoint key 计算 | `redis` |
-| `fyuneru.s3_toolkit` | S3 client 初始化与对象读写删除 | `s3` |
+| `fyuneru.s3_toolkit` | S3 client 初始化与对象读写删除列举 | `s3` |
 | `fyuneru.s3_source` | 通过 `blob://桶id/key` 协议透明读取多个 S3 源 | `s3` |
 | `fyuneru.mongo_toolkit` | MongoClient 惰性初始化 | `mongo` |
 | `fyuneru.dramatiq_toolkit` | Dramatiq broker 初始化、消息构造与投递 | `pipeline` |
@@ -159,7 +159,13 @@ clear("item-001").unwrap()
 ### S3 对象存储
 
 ```python
-from fyuneru.s3_toolkit import gen_s3worker, init_client
+from fyuneru.s3_toolkit import (
+    gen_s3deleter,
+    gen_s3lister,
+    gen_s3reader,
+    gen_s3writer,
+    init_client,
+)
 
 client = init_client(
     endpoint="https://s3.example.com",
@@ -168,10 +174,14 @@ client = init_client(
     region_name="us-east-1",
 )()
 
-write, read, delete = gen_s3worker(client, bucket="my-bucket")
+write = gen_s3writer(client, bucket="my-bucket")
+read = gen_s3reader(client, bucket="my-bucket")
+delete = gen_s3deleter(client, bucket="my-bucket")
+lister = gen_s3lister(client, bucket="my-bucket")
 
 write("demo.txt", b"hello").unwrap()
 data = read("demo.txt").unwrap()
+keys = lister(prefix="data/", suffix=".parquet").unwrap()
 delete("demo.txt").unwrap()
 ```
 

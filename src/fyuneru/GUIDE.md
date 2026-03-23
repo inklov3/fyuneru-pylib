@@ -152,7 +152,9 @@ assert is_past("item-001").unwrap() is True
 Requires: `fyuneru[s3]`
 
 ```python
-from fyuneru.s3_toolkit import init_client, gen_s3worker
+from fyuneru.s3_toolkit import (
+    init_client, gen_s3writer, gen_s3reader, gen_s3deleter, gen_s3lister,
+)
 
 init_client(
     endpoint: str,
@@ -163,11 +165,20 @@ init_client(
 ) -> Callable[[], S3Client]
 # Default config: signature_version="s3v4", addressing_style="virtual"
 
-gen_s3worker(client: S3Client, bucket: str)
-    -> tuple[ObjectStorageWriter, ObjectStorageReader, ObjectStorageDeleter]
+gen_s3writer(client: S3Client, bucket: str) -> ObjectStorageWriter
 # writer(key: str, body: bytes) -> ResultE[None]  — put_object
+
+gen_s3reader(client: S3Client, bucket: str) -> ObjectStorageReader
 # reader(key: str) -> ResultE[bytes]               — get_object
+
+gen_s3deleter(client: S3Client, bucket: str) -> ObjectStorageDeleter
 # deleter(key: str) -> ResultE[None]               — delete_object
+
+gen_s3lister(client: S3Client, bucket: str) -> ObjectStorageLister
+# lister(prefix: str, suffix: str | None = None) -> ResultE[list[str]]
+# Auto-paginates via list_objects_v2 + ContinuationToken.
+# Filters out directory placeholders (keys ending with "/").
+# Optional suffix filter applied client-side.
 ```
 
 ### s3_source (`fyuneru.s3_source`)

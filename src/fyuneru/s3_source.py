@@ -9,7 +9,7 @@ from urllib.parse import urlparse
 from returns.result import ResultE, safe
 
 from fyuneru.config import read_config_with_override
-from fyuneru.s3_toolkit import ObjectStorageReader, gen_s3worker, init_client
+from fyuneru.s3_toolkit import ObjectStorageReader, gen_s3reader, init_client
 
 BLOB_SCHEME = "blob"
 
@@ -62,7 +62,7 @@ def init_source_reader(
                 secret_access_key=cfg["secret_access_key"],
                 region_name=cfg.get("region_name"),
             )()  # 调用 partial 得到实际 client
-            _, reader, _ = gen_s3worker(client, cfg["bucket"])
+            reader = gen_s3reader(client, cfg["bucket"])
             readers[bucket_id] = reader
         return readers[bucket_id](key).unwrap()
 
