@@ -22,9 +22,6 @@ uv run ruff format src/
 # Type check
 uv run pyrefly check src/
 
-# Clean build artifacts
-uv run pyclean .
-
 # Full pre-release pipeline (lint + typecheck + tests)
 ./pre_release.sh
 ```
@@ -34,12 +31,12 @@ uv run pyclean .
 No test framework — tests are plain Python scripts with `assert` statements.
 
 ```bash
-# run a single test
+# Run a single test
 uv run python test/test_logger.py
 uv run python test/test_s3_source.py
 uv run python test/test_config.py
 
-# run all tests (via pre_release.sh or manually)
+# Run all tests
 uv run python test/test_s3_source.py && uv run python test/test_logger.py && uv run python test/test_config.py
 ```
 
@@ -53,7 +50,7 @@ uv run pyrefly check src/
 
 ## Tech Stack
 
-- Python >= 3.11, ESM-style `src/` layout (PEP 517/621)
+- Python >= 3.11, `src/` layout (PEP 517/621)
 - Build backend: Hatchling
 - Package manager: **uv** (not pip, not poetry)
 - Linter/formatter: ruff
@@ -133,7 +130,6 @@ Each group separated by a blank line. Prefer `from X import Y` over bare `import
 - **Code** (identifiers): English
 - **Docstrings and comments**: Chinese
 - **Commit messages**: Chinese, prefixed with type (`fix:`, `refactor:`, `feat:`, `doc:`, `style:`)
-- **GUIDE.md / CLAUDE.md**: English
 
 ### Type Annotations
 
@@ -161,7 +157,6 @@ Each group separated by a blank line. Prefer `from X import Y` over bare `import
 
 ## Key Documentation
 
-- `CLAUDE.md` — concise project overview for Claude Code
 - `src/fyuneru/GUIDE.md` — comprehensive API reference (English), distributed with the package
 - `README.md` — user-facing documentation (Chinese)
 - `CHANGELOG.md` — release history (Chinese)
