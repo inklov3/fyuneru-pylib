@@ -97,8 +97,8 @@ from fyuneru.config import (
 
 cfg = read_config(Path("config.yml"))
 cfg_with_pod = read_config_with_override(
-    base=Path("config.yml"),
-    override=Path("pod.yml"),
+    Path("config.yml"),
+    Path("pod.yml"),
 )
 
 # 底层 helper：返回裸 client 工厂
@@ -149,11 +149,11 @@ checkpoint_key = calculate_checkpoint_key(
     task="etl",
     worker="worker-a",
 )
-advance, is_past, clear = gen_redis_set(redis, set_name=checkpoint_key)
+write_set, read_set, delete_set = gen_redis_set(redis, set_name=checkpoint_key)
 
-advance("item-001").unwrap()
-assert is_past("item-001").unwrap() is True
-clear("item-001").unwrap()
+write_set("item-001").unwrap()
+assert read_set("item-001").unwrap() is True
+delete_set("item-001").unwrap()
 ```
 
 ### S3 对象存储
