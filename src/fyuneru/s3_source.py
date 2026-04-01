@@ -3,12 +3,11 @@ S3 多源协议：通过 blob://桶id/key 统一访问多个 S3 源
 """
 
 from collections.abc import Callable
-from pathlib import Path
 from urllib.parse import urlparse
 
+from loguru import logger
 from returns.result import ResultE, safe
 
-from fyuneru.config import read_config_with_override
 from fyuneru.s3_toolkit import ObjectStorageReader, gen_s3reader, init_client
 
 BLOB_SCHEME = "blob"
@@ -27,17 +26,18 @@ def parse_blob_uri(uri: str) -> tuple[str, str]:
 
 
 def load_source_registry(
-    config_path: Path,
-    override_path: Path | None = None,
+    config: dict,
 ) -> dict[str, dict]:
-    """从配置文件的 s3_sources 段加载源列表，转为以 source_id 为 key 的字典。"""
-    config = read_config_with_override(config_path, override_path)
+    """从配置的 s3_sources 段加载源列表，转为以 source_id 为 key 的字典。
+
+    检测到重复 source_id 时打印警告，后续配置覆盖前面的。
+    """
     sources = config["s3_sources"]
     registry: dict[str, dict] = {}
     for source in sources:
         source_id = source["source_id"]
         if source_id in registry:
-            raise ValueError(f"重复的 source_id: {source_id}")
+            logger.warning(f"检测到重复的 source_id: {source_id}，后续配置将覆盖前面的")
         registry[source_id] = source
     return registry
 

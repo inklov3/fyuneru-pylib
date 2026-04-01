@@ -38,18 +38,6 @@ def read_config(config: Path) -> dict[str, list | dict]:
     return _read_yaml_mapping(config)
 
 
-def _merge_s3_sources(sources: list[Any]) -> list[dict[str, Any]]:
-    deduped: dict[str, dict[str, Any]] = {}
-    for source in sources:
-        if not isinstance(source, dict):
-            raise ValueError("s3_sources 的每个条目都必须是对象")
-        source_id = source.get("source_id")
-        if not isinstance(source_id, str) or not source_id:
-            raise ValueError("s3_sources.source_id 必须是非空字符串")
-        deduped[source_id] = source
-    return list(deduped.values())
-
-
 def _merge_config_value(base: Any, override: Any, path: tuple[str, ...]) -> Any:
     if isinstance(base, dict) and isinstance(override, dict):
         merged = dict(base)
@@ -63,11 +51,6 @@ def _merge_config_value(base: Any, override: Any, path: tuple[str, ...]) -> Any:
             else:
                 merged[key] = _merge_config_value(None, override_value, next_path)
         return merged
-
-    if isinstance(override, list) and path and path[-1] == "s3_sources":
-        if isinstance(base, list):
-            return _merge_s3_sources([*base, *override])
-        return _merge_s3_sources([*override])
 
     if isinstance(base, list) and isinstance(override, list):
         return [*base, *override]

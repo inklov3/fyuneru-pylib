@@ -61,7 +61,6 @@ read_config_with_override(base: Path, override: Path | None = None) -> dict[str,
 # - dict: recursive merge, override value wins on key conflict
 # - scalar: override replaces base
 # - list: append (base + override)
-# - special case s3_sources: dedupe by source_id, later item wins
 # Non-goals: no template rendering, no field deletion semantics.
 
 init_redis_from_config(config: dict) -> Callable
@@ -195,11 +194,10 @@ parse_blob_uri(uri: str) -> tuple[str, str]
 # Raises ValueError for invalid format.
 
 load_source_registry(
-    config_path: Path,
-    override_path: Path | None = None,
+    config: dict,
 ) -> dict[str, dict]
 # Reads config["s3_sources"] list, converts to dict keyed by source_id.
-# When override_path is provided, config is loaded via read_config_with_override.
+# When duplicate source_id is found, logs warning and uses later entry to override earlier.
 
 init_source_reader(registry: dict[str, dict]) -> Callable[[str], ResultE[bytes]]
 # Returns a closure that reads from blob:// URIs.
@@ -208,14 +206,11 @@ init_source_reader(registry: dict[str, dict]) -> Callable[[str], ResultE[bytes]]
 
 **Usage:**
 ```python
-# base only
-registry = load_source_registry(Path("config.yml"))
+from fyuneru.config import read_config_with_override
+from fyuneru.s3_source import load_source_registry, init_source_reader
 
-# base + pod override
-registry = load_source_registry(
-    config_path=Path("config.yml"),
-    override_path=Path("pod.yml"),
-)
+config = read_config_with_override(Path("config.yml"))
+registry = load_source_registry(config)
 read = init_source_reader(registry)
 data = read("blob://my-images/photos/img001.jpg").unwrap()
 ```

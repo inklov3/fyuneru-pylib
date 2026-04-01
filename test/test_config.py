@@ -85,7 +85,7 @@ s3_sources:
         assert merged["service"]["labels"] == ["core", "stable", "pod"]
 
         s3_sources = merged["s3_sources"]
-        assert len(s3_sources) == 3
+        assert len(s3_sources) == 4  # 直接拼接，不去重
         by_id = {source["source_id"]: source for source in s3_sources}
         assert by_id["my-images"]["bucket"] == "pod-bucket"
         assert by_id["archive"]["bucket"] == "archive-bucket"

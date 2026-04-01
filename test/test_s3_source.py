@@ -3,13 +3,16 @@
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+from fyuneru.config import read_config_with_override
 from fyuneru.s3_source import load_source_registry, parse_blob_uri
 
 
 def test_parse_blob_uri_normal():
     bucket_id, key = parse_blob_uri("blob://my-images/photos/2024/img001.jpg")
     assert bucket_id == "my-images", f"期望 'my-images'，得到 '{bucket_id}'"
-    assert key == "photos/2024/img001.jpg", f"期望 'photos/2024/img001.jpg'，得到 '{key}'"
+    assert key == "photos/2024/img001.jpg", (
+        f"期望 'photos/2024/img001.jpg'，得到 '{key}'"
+    )
 
 
 def test_parse_blob_uri_simple_key():
@@ -91,7 +94,8 @@ s3_sources:
             encoding="utf-8",
         )
 
-        registry = load_source_registry(base_path, override_path)
+        config = read_config_with_override(base_path, override_path)
+        registry = load_source_registry(config)
         assert set(registry.keys()) == {"my-images", "archive", "backup"}
         assert registry["my-images"]["bucket"] == "pod-bucket"
         assert registry["archive"]["bucket"] == "archive-bucket"
