@@ -8,7 +8,7 @@ from urllib.parse import urlparse
 from loguru import logger
 from returns.result import ResultE, safe
 
-from fyuneru.s3_toolkit import ObjectStorageReader, gen_s3reader, init_client
+from fyuneru.s3_toolkit import ObjectStorageReader, bind_s3_reader, init_client
 
 BLOB_SCHEME = "blob"
 
@@ -33,16 +33,36 @@ def load_source_registry(
     检测到重复 source_id 时打印警告，后续配置覆盖前面的。
     """
     sources = config["s3_sources"]
+    if not isinstance(sources, list):
+        raise ValueError("s3_sources 必须是列表")
+
+    required_fields = (
+        "source_id",
+        "endpoint",
+        "bucket",
+        "access_key_id",
+        "secret_access_key",
+    )
     registry: dict[str, dict] = {}
-    for source in sources:
+    for index, source in enumerate(sources):
+        if not isinstance(source, dict):
+            raise ValueError(f"s3_sources[{index}] 必须是对象")
+        missing_fields = [field for field in required_fields if field not in source]
+        if missing_fields:
+            joined = ", ".join(missing_fields)
+            raise ValueError(f"s3_sources[{index}] 缺少字段: {joined}")
+
         source_id = source["source_id"]
+        if not isinstance(source_id, str) or source_id == "":
+            raise ValueError(f"s3_sources[{index}] 的 source_id 必须是非空字符串")
+
         if source_id in registry:
             logger.warning(f"检测到重复的 source_id: {source_id}，后续配置将覆盖前面的")
         registry[source_id] = source
     return registry
 
 
-def init_source_reader(
+def bind_source_reader(
     registry: dict[str, dict],
 ) -> Callable[[str], ResultE[bytes]]:
     """返回一个闭包函数，接受 blob:// URI，返回 ResultE[bytes]。
@@ -50,8 +70,11 @@ def init_source_reader(
     readers: dict[str, ObjectStorageReader] = {}
 
     @safe
-    def read(uri: str) -> bytes:
-        bucket_id, key = parse_blob_uri(uri)
+    def parse_uri(uri: str) -> tuple[str, str]:
+        return parse_blob_uri(uri)
+
+    @safe
+    def ensure_reader(bucket_id: str) -> ObjectStorageReader:
         if bucket_id not in registry:
             raise KeyError(f"unsupport bucket id: {bucket_id}")
         if bucket_id not in readers:
@@ -61,9 +84,15 @@ def init_source_reader(
                 access_key_id=cfg["access_key_id"],
                 secret_access_key=cfg["secret_access_key"],
                 region_name=cfg.get("region_name"),
-            )()  # 调用 partial 得到实际 client
-            reader = gen_s3reader(client, cfg["bucket"])
-            readers[bucket_id] = reader
-        return readers[bucket_id](key).unwrap()
+            )()
+            readers[bucket_id] = bind_s3_reader(client, cfg["bucket"])
+        return readers[bucket_id]
+
+    def read(uri: str) -> ResultE[bytes]:
+        return parse_uri(uri).bind(
+            lambda parsed: ensure_reader(parsed[0]).bind(
+                lambda reader: reader(parsed[1])
+            )
+        )
 
     return read

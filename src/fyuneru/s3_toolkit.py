@@ -1,5 +1,4 @@
 from collections.abc import Callable
-from functools import partial
 from typing import Protocol
 
 from boto3 import Session
@@ -46,15 +45,18 @@ def init_client(
         aws_secret_access_key=secret_access_key,
         region_name=region_name,
     )
-    return partial(
-        session.client,
-        service_name="s3",
-        endpoint_url=endpoint,
-        config=config,
-    )
+
+    def create_client() -> S3Client:
+        return session.client(
+            service_name="s3",
+            endpoint_url=endpoint,
+            config=config,
+        )
+
+    return create_client
 
 
-def gen_s3writer(client: S3Client, bucket: str) -> ObjectStorageWriter:
+def bind_s3_writer(client: S3Client, bucket: str) -> ObjectStorageWriter:
     @safe
     def write_object(key: str, body: bytes) -> None:
         client.put_object(Bucket=bucket, Key=key, Body=body)
@@ -62,7 +64,7 @@ def gen_s3writer(client: S3Client, bucket: str) -> ObjectStorageWriter:
     return write_object
 
 
-def gen_s3reader(client: S3Client, bucket: str) -> ObjectStorageReader:
+def bind_s3_reader(client: S3Client, bucket: str) -> ObjectStorageReader:
     @safe
     def read_object(key: str) -> bytes:
         response = client.get_object(Bucket=bucket, Key=key)
@@ -74,7 +76,7 @@ def gen_s3reader(client: S3Client, bucket: str) -> ObjectStorageReader:
     return read_object
 
 
-def gen_s3deleter(client: S3Client, bucket: str) -> ObjectStorageDeleter:
+def bind_s3_deleter(client: S3Client, bucket: str) -> ObjectStorageDeleter:
     @safe
     def delete_object(key: str) -> None:
         client.delete_object(Bucket=bucket, Key=key)
@@ -82,7 +84,7 @@ def gen_s3deleter(client: S3Client, bucket: str) -> ObjectStorageDeleter:
     return delete_object
 
 
-def gen_s3lister(client: S3Client, bucket: str) -> ObjectStorageLister:
+def bind_s3_lister(client: S3Client, bucket: str) -> ObjectStorageLister:
     @safe
     def list_objects(prefix: str, suffix: str | None = None) -> list[str]:
         keys: list[str] = []
@@ -93,7 +95,9 @@ def gen_s3lister(client: S3Client, bucket: str) -> ObjectStorageLister:
                 kwargs["ContinuationToken"] = continuation_token
             response = client.list_objects_v2(**kwargs)
             for obj in response.get("Contents", []):
-                key: str = obj["Key"]
+                key = obj.get("Key")
+                if key is None:
+                    continue
                 if key.endswith("/"):
                     continue
                 if suffix is not None and not key.endswith(suffix):

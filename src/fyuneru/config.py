@@ -170,9 +170,9 @@ def init_s3_workspace_from_config(
     def create_workspace():
         client = init()
         return (
-            s3_toolkit.gen_s3writer(client, bucket),
-            s3_toolkit.gen_s3reader(client, bucket),
-            s3_toolkit.gen_s3deleter(client, bucket),
+            s3_toolkit.bind_s3_writer(client, bucket),
+            s3_toolkit.bind_s3_reader(client, bucket),
+            s3_toolkit.bind_s3_deleter(client, bucket),
         )
 
     return create_workspace

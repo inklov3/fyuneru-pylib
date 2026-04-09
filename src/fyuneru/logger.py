@@ -18,7 +18,7 @@ class LogLevel:
 
 
 @safe
-def init_logger(level: str = LogLevel.INFO, log_dir: Path | None = None):
+def configure_logger(level: str = LogLevel.INFO, log_dir: Path | None = None):
     from loguru import logger
 
     log_format = "{time:YYYY-MM-DD HH:mm:ss}<level>|{level}|{message}</level>"
@@ -26,7 +26,7 @@ def init_logger(level: str = LogLevel.INFO, log_dir: Path | None = None):
     logger.add(sink=stdout, level=level, format=log_format)
     if log_dir:
         log_dir.mkdir(parents=True, exist_ok=True)
-        log_path = log_dir / f"{datetime.now():%Y-%m-%d_%H:%M:%S}.log"
+        log_path = log_dir / f"{datetime.now():%Y-%m-%d_%H-%M-%S}.log"
         logger.add(
             str(log_path),
             format=log_format,

@@ -43,32 +43,36 @@ s3_sources:
 
 ### Pod YAML 增量覆盖
 
-`load_source_registry` 支持传入 `override_path`，用于 `base.yml + pod.yml` 场景：
+`load_source_registry` 接收已合并的配置字典；可先用 `read_config_with_override` 处理 `base.yml + pod.yml`：
 
 ```python
-registry = load_source_registry(
-    config_path=Path("config.yml"),
-    override_path=Path("pod.yml"),
+config = read_config_with_override(
+    Path("config.yml"),
+    Path("pod.yml"),
 )
+registry = load_source_registry(config)
 ```
 
-合并时 `s3_sources` 列表先按追加处理，再按 `source_id` 去重；若重复，后者覆盖前者（即 Pod 层生效）。
+合并时 `s3_sources` 列表先按追加处理，再由 `load_source_registry` 按 `source_id` 去重；若重复，后者覆盖前者（即 Pod 层生效）。
 
 ## 解析流程
 
 1. 解析 URI → 提取桶id + 对象key
 2. 用桶id查找配置中 `s3_sources` 列表的对应条目
 3. 用源配置初始化 S3 client（复用 `s3_toolkit.init_client`）
-4. 调用 `gen_s3worker` 生成读取函数，执行读取
+4. 调用 `bind_s3_reader` 生成读取函数，执行读取
 
 ## 使用示例
 
 ```python
 from pathlib import Path
-from fyuneru.s3_source import load_source_registry, init_source_reader
 
-registry = load_source_registry(Path("config.yml"))
-read = init_source_reader(registry)
+from fyuneru.config import read_config_with_override
+from fyuneru.s3_source import bind_source_reader, load_source_registry
+
+config = read_config_with_override(Path("config.yml"))
+registry = load_source_registry(config)
+read = bind_source_reader(registry)
 
 result = read("blob://my-images/photos/2024/img001.jpg")
 # result: Result[bytes, Exception]

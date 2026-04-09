@@ -9,11 +9,7 @@ def calculate_namespace(worker: str, task: str) -> str:
     return f"{worker}:{{{task}}}"
 
 
-def init_broker(redis_client: Redis | RedisCluster, namespace: str) -> Broker:
-    if isinstance(redis_client, RedisCluster):
-        from os import environ
-
-        environ["dramatiq_lua_max_stack"] = "8000"
+def build_broker(redis_client: Redis | RedisCluster, namespace: str) -> Broker:
     from dramatiq.brokers.redis import RedisBroker
 
     return RedisBroker(client=redis_client, namespace=namespace)

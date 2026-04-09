@@ -36,20 +36,35 @@ class RedisSetDeleter(Protocol):
     def __call__(self, key: str) -> ResultE[None]: ...
 
 
-def gen_redis_set(
-    client: Redis | RedisCluster, set_name: str
-) -> tuple[RedisSetWriter, RedisSetReader, RedisSetDeleter]:
+def bind_redis_set_writer(
+    client: Redis | RedisCluster,
+    set_name: str,
+) -> RedisSetWriter:
     @safe
     def set_writer(key: str) -> None:
         client.sadd(set_name, key)
 
+    return set_writer
+
+
+def bind_redis_set_reader(
+    client: Redis | RedisCluster,
+    set_name: str,
+) -> RedisSetReader:
     @safe
     def set_reader(key: str) -> bool:
         result = client.sismember(set_name, key)
         return bool(result)
 
+    return set_reader
+
+
+def bind_redis_set_deleter(
+    client: Redis | RedisCluster,
+    set_name: str,
+) -> RedisSetDeleter:
     @safe
     def set_deleter(key: str) -> None:
         client.srem(set_name, key)
 
-    return set_writer, set_reader, set_deleter
+    return set_deleter

@@ -1,5 +1,34 @@
 # Changelog
 
+## 2026-04-09
+
+### 重构（破坏性）
+
+- **命名前缀统一**：
+  - `logger.py`：`init_logger` → `configure_logger`
+  - `dramatiq_toolkit.py`：`init_broker` → `build_broker`
+  - `gemini_toolkit.py`：`gen_content_config` → `build_content_config`
+  - `s3_source.py`：`init_source_reader` → `bind_source_reader`
+  - `s3_toolkit.py`：`gen_s3writer` / `gen_s3reader` / `gen_s3deleter` / `gen_s3lister` → `bind_s3_writer` / `bind_s3_reader` / `bind_s3_deleter` / `bind_s3_lister`
+  - `redis_toolkit.py`：删除 `gen_redis_set`，改为 `bind_redis_set_writer` / `bind_redis_set_reader` / `bind_redis_set_deleter`
+- **`dramatiq_toolkit.py`**：`build_broker` 不再隐式修改进程级环境变量
+
+### 修复
+
+- **`s3_source.py`**：去掉 `@safe` 闭包内部对 `Result` 的 `.unwrap()`，改为 `Result` 链式组合，避免错误类型被折叠
+- **`s3_source.py`**：`load_source_registry` 新增 `s3_sources` 结构与必填字段校验，提前暴露配置错误
+- **`logger.py`**：日志文件名时间格式去除冒号（`%H-%M-%S`），提升跨平台兼容性
+
+### 测试
+
+- **`test/test_s3_source.py`**：新增 `load_source_registry` 必填字段校验测试、未知 bucket 错误路径测试
+- **`test/test_logger.py`**：改为函数化测试并断言 `latest.log` 生成
+
+### 文档
+
+- **`README.md`** / **`GUIDE.md`** / **`docs/s3_source_protocol.md`**：同步全部新 API 命名与 `s3_sources` 合并/去重边界说明
+- **`AGENTS.md`**：更新模块模式与示例命名
+
 ## 2026-03-23
 
 ### 重构
@@ -24,18 +53,17 @@
   - `dict` 递归合并
   - 标量后者覆盖
   - `list` 默认追加
-  - `s3_sources` 特例按 `source_id` 去重，重复时后者覆盖
-- **`s3_source.py`** — `load_source_registry` 增加 `override_path` 参数，复用配置覆盖逻辑
+- **`s3_source.py`** — 通过 `load_source_registry` 在注册表构建阶段按 `source_id` 去重，重复时后者覆盖
 
 ### 测试
 
 - **`test/test_config.py`** — 新增配置增量覆盖测试
-- **`test/test_s3_source.py`** — 新增 `load_source_registry(base, override)` 用例
+- **`test/test_s3_source.py`** — 新增 `load_source_registry` 配置合并后去重用例
 
 ### 文档
 
 - **`README.md`** — 新增 Pod YAML 增量覆盖说明、规则与非目标说明
-- **`docs/s3_source_protocol.md`** — 增补 `override_path` 使用方式与 `s3_sources` 冲突规则
+- **`docs/s3_source_protocol.md`** — 增补配置合并后调用 `load_source_registry` 的使用方式与 `s3_sources` 冲突规则
 
 ## 2026-03-10
 

@@ -1,6 +1,6 @@
 # fyuneru — API Reference for Claude Code
 
-Python utility library wrapping common infrastructure components with unified, composable functional interfaces. Uses `returns` for safe error handling and `functools.partial` for lazy initialization.
+Python utility library wrapping common infrastructure components with unified, composable functional interfaces. Uses `returns` for safe error handling and lazy client initialization.
 
 ## Installation
 
@@ -18,22 +18,23 @@ uv add "fyuneru[gemini] @ git+https://github.com/inklov3/fyuneru-pylib.git"     
 
 ## Key Patterns
 
-- **`init_*`** returns a `Callable` (via `functools.partial`) that lazily creates a client when called
-- **`gen_*`** returns a tuple of composable operation functions (writer, reader, deleter)
+- **`init_*`** returns a `Callable` that lazily creates a client when called
+- **`bind_*`** binds client/resources and returns a single composable operation function
+- **`build_*`** builds higher-level composed objects
 - **`@safe`** from `returns` wraps return values in `Result` type; use `.unwrap()` to extract the value
-- **Checkpoint** is implemented by composing `calculate_checkpoint_key()` + `gen_redis_set()` — no dedicated abstraction
+- **Checkpoint** is implemented by composing `calculate_checkpoint_key()` + redis set binders — no dedicated abstraction
 
 ## Modules
 
 ### logger (`fyuneru.logger`)
 
 ```python
-from fyuneru.logger import init_logger, tqdm_loguru, LogLevel
+from fyuneru.logger import configure_logger, tqdm_loguru, LogLevel
 
 # LogLevel: INFO, WARNING, ERROR, DEBUG
 
 @safe
-init_logger(level: str = LogLevel.INFO, log_dir: Path | None = None) -> None
+configure_logger(level: str = LogLevel.INFO, log_dir: Path | None = None) -> None
 # Configures loguru logger with console output + optional file output.
 # When log_dir is set, creates timestamped log file and latest.log.
 
@@ -120,18 +121,24 @@ Requires: `fyuneru[redis]`
 
 ```python
 from fyuneru.redis_toolkit import (
-    init_client_standalone, init_client_cluster,
-    gen_redis_set, calculate_checkpoint_key,
+    bind_redis_set_deleter,
+    bind_redis_set_reader,
+    bind_redis_set_writer,
+    calculate_checkpoint_key,
+    init_client_cluster,
+    init_client_standalone,
 )
 
 init_client_standalone(host: str, port: int, db: int, **kwargs) -> Callable[[], Redis]
 init_client_cluster(host: str, port: int, **kwargs) -> Callable[[], RedisCluster]
 
-gen_redis_set(client: Redis | RedisCluster, set_name: str)
-    -> tuple[RedisSetWriter, RedisSetReader, RedisSetDeleter]
-# Returns (writer, reader, deleter) for Redis Set operations.
+bind_redis_set_writer(client: Redis | RedisCluster, set_name: str) -> RedisSetWriter
 # writer(key: str) -> ResultE[None]   — sadd
+
+bind_redis_set_reader(client: Redis | RedisCluster, set_name: str) -> RedisSetReader
 # reader(key: str) -> ResultE[bool]   — sismember
+
+bind_redis_set_deleter(client: Redis | RedisCluster, set_name: str) -> RedisSetDeleter
 # deleter(key: str) -> ResultE[None]  — srem
 
 calculate_checkpoint_key(checkpoint: str, task: str, worker: str) -> str
@@ -141,7 +148,9 @@ calculate_checkpoint_key(checkpoint: str, task: str, worker: str) -> str
 **Checkpoint pattern:**
 ```python
 checkpoint_key = calculate_checkpoint_key(checkpoint="step1", task="etl", worker="w1")
-advance, is_past, delete = gen_redis_set(redis, set_name=checkpoint_key)
+advance = bind_redis_set_writer(redis, set_name=checkpoint_key)
+is_past = bind_redis_set_reader(redis, set_name=checkpoint_key)
+delete = bind_redis_set_deleter(redis, set_name=checkpoint_key)
 advance("item-001").unwrap()
 assert is_past("item-001").unwrap() is True
 ```
@@ -152,7 +161,11 @@ Requires: `fyuneru[s3]`
 
 ```python
 from fyuneru.s3_toolkit import (
-    init_client, gen_s3writer, gen_s3reader, gen_s3deleter, gen_s3lister,
+    bind_s3_deleter,
+    bind_s3_lister,
+    bind_s3_reader,
+    bind_s3_writer,
+    init_client,
 )
 
 init_client(
@@ -164,16 +177,16 @@ init_client(
 ) -> Callable[[], S3Client]
 # Default config: signature_version="s3v4", addressing_style="virtual"
 
-gen_s3writer(client: S3Client, bucket: str) -> ObjectStorageWriter
+bind_s3_writer(client: S3Client, bucket: str) -> ObjectStorageWriter
 # writer(key: str, body: bytes) -> ResultE[None]  — put_object
 
-gen_s3reader(client: S3Client, bucket: str) -> ObjectStorageReader
+bind_s3_reader(client: S3Client, bucket: str) -> ObjectStorageReader
 # reader(key: str) -> ResultE[bytes]               — get_object
 
-gen_s3deleter(client: S3Client, bucket: str) -> ObjectStorageDeleter
+bind_s3_deleter(client: S3Client, bucket: str) -> ObjectStorageDeleter
 # deleter(key: str) -> ResultE[None]               — delete_object
 
-gen_s3lister(client: S3Client, bucket: str) -> ObjectStorageLister
+bind_s3_lister(client: S3Client, bucket: str) -> ObjectStorageLister
 # lister(prefix: str, suffix: str | None = None) -> ResultE[list[str]]
 # Auto-paginates via list_objects_v2 + ContinuationToken.
 # Filters out directory placeholders (keys ending with "/").
@@ -187,7 +200,7 @@ Requires: `fyuneru[s3]`
 通过 `blob://桶id/key` URI 协议透明访问多个 S3 源。
 
 ```python
-from fyuneru.s3_source import parse_blob_uri, load_source_registry, init_source_reader
+from fyuneru.s3_source import bind_source_reader, load_source_registry, parse_blob_uri
 
 parse_blob_uri(uri: str) -> tuple[str, str]
 # Parses "blob://bucket_id/key" -> (bucket_id, key).
@@ -196,10 +209,11 @@ parse_blob_uri(uri: str) -> tuple[str, str]
 load_source_registry(
     config: dict,
 ) -> dict[str, dict]
-# Reads config["s3_sources"] list, converts to dict keyed by source_id.
+# Reads config["s3_sources"] list, validates required fields,
+# converts to dict keyed by source_id.
 # When duplicate source_id is found, logs warning and uses later entry to override earlier.
 
-init_source_reader(registry: dict[str, dict]) -> Callable[[str], ResultE[bytes]]
+bind_source_reader(registry: dict[str, dict]) -> Callable[[str], ResultE[bytes]]
 # Returns a closure that reads from blob:// URIs.
 # Lazily initializes S3 clients per bucket_id, caches them.
 ```
@@ -207,16 +221,16 @@ init_source_reader(registry: dict[str, dict]) -> Callable[[str], ResultE[bytes]]
 **Usage:**
 ```python
 from fyuneru.config import read_config_with_override
-from fyuneru.s3_source import load_source_registry, init_source_reader
+from fyuneru.s3_source import bind_source_reader, load_source_registry
 
 config = read_config_with_override(Path("config.yml"))
 registry = load_source_registry(config)
-read = init_source_reader(registry)
+read = bind_source_reader(registry)
 data = read("blob://my-images/photos/img001.jpg").unwrap()
 ```
 
 **Overlay note:**
-- For `s3_sources`, merge behavior is append + dedupe by `source_id` (later item wins).
+- For `s3_sources`, `read_config_with_override` keeps append behavior; dedupe by `source_id` is applied in `load_source_registry` (later item wins).
 
 **Config format (main YAML `s3_sources` section):**
 ```yaml
@@ -254,14 +268,17 @@ Requires: `fyuneru[pipeline]`
 
 ```python
 from fyuneru.dramatiq_toolkit import (
-    calculate_namespace, init_broker, new_message, send_message,
+    build_broker,
+    calculate_namespace,
+    new_message,
+    send_message,
 )
 
 calculate_namespace(worker: str, task: str) -> str
 # Returns "{worker}:{{{task}}}"
 
-init_broker(redis_client: Redis | RedisCluster, namespace: str) -> Broker
-# Creates a Dramatiq RedisBroker. For RedisCluster, sets dramatiq_lua_max_stack=8000.
+build_broker(redis_client: Redis | RedisCluster, namespace: str) -> Broker
+# Creates a Dramatiq RedisBroker.
 
 new_message(
     actor_name: str,
@@ -280,13 +297,13 @@ send_message(broker: Broker, message: Message) -> Message
 Requires: `fyuneru[gemini]`
 
 ```python
-from fyuneru.gemini_toolkit import init_client, gen_content_config
+from fyuneru.gemini_toolkit import build_content_config, init_client
 
 init_client(api_key: str, endpoint: str, api_version: str = "v1beta")
     -> Callable[[], Client]
 # Creates a google.genai.Client with custom endpoint and auth headers.
 
-gen_content_config(
+build_content_config(
     schema: dict[str, Any],
     response_mime_type: str = "application/json",
     temperature: float = 0,
@@ -301,7 +318,7 @@ client = init_client(api_key="sk_xxx", endpoint="https://xxx")()
 response = client.models.generate_content(
     model="gemini-2.0-flash",
     contents=[prompt],
-    config=gen_content_config(
+    config=build_content_config(
         schema=MyModel.model_json_schema(),
         system_instruction=system_prompt,
     ),

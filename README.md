@@ -1,19 +1,20 @@
 # fyuneru
 
-> Python 工具库，按统一的函数式约定封装常用基础设施组件。核心模式是：`init_*` 做惰性初始化，`gen_*` 生成可组合操作函数，错误通过 `returns.Result` 显式返回。
+> Python 工具库，按统一的函数式约定封装常用基础设施组件。核心模式是：`init_*` 做惰性初始化，`bind_*` 绑定资源生成可组合操作函数，`build_*` 构建组合对象，错误通过 `returns.Result` 显式返回。
 
 ## 项目定位
 
 `fyuneru` 用来把 Redis、S3、MongoDB、Dramatiq、Gemini 等基础设施访问整理成更小、更稳定的组合单元。
 
-- 推荐从子模块导入，例如 `from fyuneru.redis_toolkit import gen_redis_set`
+- 推荐从子模块导入，例如 `from fyuneru.redis_toolkit import bind_redis_set_writer`
 - 默认安装只包含核心依赖；使用 Redis、MongoDB、Gemini 等能力时，需要安装对应 extra
 - `config.py` 只读取 YAML，并支持 `base.yml + pod.yml` 的单层增量覆盖；调用 `init_*_from_config` 时延迟导入对应 toolkit，避免默认安装下导入 `fyuneru.config` 就因为缺少可选依赖失败
 
 ## 核心约定
 
 - `init_*`：返回 `Callable`，调用时才真正创建 client 或 handle
-- `gen_*`：返回一组可直接组合的操作函数
+- `bind_*`：绑定 client + 资源名，返回单一操作函数
+- `build_*`：构建已绑定的组合对象
 - `@safe`：把可能失败的操作包装成 `ResultE[...]`；需要值时再 `.unwrap()`
 - 顶层 `fyuneru` 不提供统一 re-export，建议直接从具体子模块导入
 
@@ -69,9 +70,9 @@ uv add "fyuneru[redis,s3] @ git+https://github.com/inklov3/fyuneru-pylib.git"
 ```python
 from pathlib import Path
 
-from fyuneru.logger import LogLevel, init_logger, tqdm_loguru
+from fyuneru.logger import LogLevel, configure_logger, tqdm_loguru
 
-init_logger(level=LogLevel.INFO, log_dir=Path("./logs")).unwrap()
+configure_logger(level=LogLevel.INFO, log_dir=Path("./logs")).unwrap()
 
 for item in tqdm_loguru(items, desc="Processing"):
     process(item)
@@ -124,7 +125,7 @@ db = init_mongo_database_from_config(cfg_with_pod)()
 - `dict`：递归合并，同名键由 override 覆盖
 - 标量：override 直接替换 base
 - `list`：默认追加（`base + override`）
-- 特例 `s3_sources`：按 `source_id` 去重，重复时后者覆盖前者（override 生效）
+- `s3_sources` 在该层仍按 list 追加；若需要按 `source_id` 去重，请在 `load_source_registry` 阶段处理
 
 当前不支持模板变量渲染、字段删除语义（例如用 `null` 删除 base 字段）。
 
@@ -132,8 +133,10 @@ db = init_mongo_database_from_config(cfg_with_pod)()
 
 ```python
 from fyuneru.redis_toolkit import (
+    bind_redis_set_deleter,
+    bind_redis_set_reader,
+    bind_redis_set_writer,
     calculate_checkpoint_key,
-    gen_redis_set,
     init_client_standalone,
 )
 
@@ -149,7 +152,9 @@ checkpoint_key = calculate_checkpoint_key(
     task="etl",
     worker="worker-a",
 )
-write_set, read_set, delete_set = gen_redis_set(redis, set_name=checkpoint_key)
+write_set = bind_redis_set_writer(redis, set_name=checkpoint_key)
+read_set = bind_redis_set_reader(redis, set_name=checkpoint_key)
+delete_set = bind_redis_set_deleter(redis, set_name=checkpoint_key)
 
 write_set("item-001").unwrap()
 assert read_set("item-001").unwrap() is True
@@ -160,10 +165,10 @@ delete_set("item-001").unwrap()
 
 ```python
 from fyuneru.s3_toolkit import (
-    gen_s3deleter,
-    gen_s3lister,
-    gen_s3reader,
-    gen_s3writer,
+    bind_s3_deleter,
+    bind_s3_lister,
+    bind_s3_reader,
+    bind_s3_writer,
     init_client,
 )
 
@@ -174,10 +179,10 @@ client = init_client(
     region_name="us-east-1",
 )()
 
-write = gen_s3writer(client, bucket="my-bucket")
-read = gen_s3reader(client, bucket="my-bucket")
-delete = gen_s3deleter(client, bucket="my-bucket")
-lister = gen_s3lister(client, bucket="my-bucket")
+write = bind_s3_writer(client, bucket="my-bucket")
+read = bind_s3_reader(client, bucket="my-bucket")
+delete = bind_s3_deleter(client, bucket="my-bucket")
+lister = bind_s3_lister(client, bucket="my-bucket")
 
 write("demo.txt", b"hello").unwrap()
 data = read("demo.txt").unwrap()
@@ -192,17 +197,20 @@ delete("demo.txt").unwrap()
 ```python
 from pathlib import Path
 
-from fyuneru.s3_source import init_source_reader, load_source_registry
+from fyuneru.config import read_config_with_override
+from fyuneru.s3_source import bind_source_reader, load_source_registry
 
 # 无覆盖层
-registry = load_source_registry(Path("config.yml"))
+config = read_config_with_override(Path("config.yml"))
+registry = load_source_registry(config)
 
 # 带 Pod 覆盖层
-registry = load_source_registry(
-    config_path=Path("config.yml"),
-    override_path=Path("pod.yml"),
+config = read_config_with_override(
+    Path("config.yml"),
+    Path("pod.yml"),
 )
-read = init_source_reader(registry)
+registry = load_source_registry(config)
+read = bind_source_reader(registry)
 
 data = read("blob://my-images/photos/2024/img001.jpg").unwrap()
 ```
@@ -223,14 +231,14 @@ collection = db["items"]
 
 ```python
 from fyuneru.dramatiq_toolkit import (
+    build_broker,
     calculate_namespace,
-    init_broker,
     new_message,
     send_message,
 )
 
 namespace = calculate_namespace(worker="worker-a", task="etl")
-broker = init_broker(redis_client, namespace=namespace)
+broker = build_broker(redis_client, namespace=namespace)
 message = new_message(
     actor_name="process_item",
     queue_name="default",
@@ -242,7 +250,7 @@ send_message(broker, message)
 ### Gemini 结构化输出
 
 ```python
-from fyuneru.gemini_toolkit import gen_content_config, init_client
+from fyuneru.gemini_toolkit import build_content_config, init_client
 
 client = init_client(
     api_key="sk_xxxx",
@@ -252,7 +260,7 @@ client = init_client(
 response = client.models.generate_content(
     model="gemini-2.0-flash",
     contents=[prompt],
-    config=gen_content_config(
+    config=build_content_config(
         schema=MyModel.model_json_schema(),
         system_instruction=system_prompt,
     ),

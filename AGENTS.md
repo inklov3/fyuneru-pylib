@@ -2,7 +2,7 @@
 
 Python utility library wrapping common infrastructure components (Redis, S3, MongoDB,
 Dramatiq, Google Gemini) with unified, composable functional interfaces.
-Uses `returns` library for safe error handling and `functools.partial` for lazy initialization.
+Uses `returns` library for safe error handling and lazy initialization patterns.
 
 ## Build & Test Commands
 
@@ -64,29 +64,29 @@ uv run pyrefly check src/
 
 | Module               | Pattern              | External Deps          |
 |----------------------|----------------------|------------------------|
-| `logger.py`          | `init_logger`        | loguru, tqdm           |
+| `logger.py`          | `configure_logger`   | loguru, tqdm           |
 | `config.py`          | Pure `read_config`   | pyyaml                 |
 | `converter.py`       | Pure functions       | stdlib                 |
 | `markdown_utils.py`  | Pure function        | stdlib re              |
-| `redis_toolkit.py`   | `init_*` + `gen_*`   | redis                  |
-| `s3_toolkit.py`      | `init_*` + `gen_*`   | boto3, mypy-boto3-s3   |
-| `s3_source.py`       | `parse_*` + `init_*` | boto3 (via s3_toolkit) |
+| `redis_toolkit.py`   | `init_*` + `bind_*`  | redis                  |
+| `s3_toolkit.py`      | `init_*` + `bind_*`  | boto3, mypy-boto3-s3   |
+| `s3_source.py`       | `parse_*` + `bind_*` | boto3 (via s3_toolkit) |
 | `mongo_toolkit.py`   | `init_client`        | pymongo                |
-| `dramatiq_toolkit.py`| `init_broker` + helpers | dramatiq, redis     |
-| `gemini_toolkit.py`  | `init_client` + `gen_*` | google-genai        |
+| `dramatiq_toolkit.py`| `build_broker` + helpers | dramatiq, redis    |
+| `gemini_toolkit.py`  | `init_client` + `build_*` | google-genai      |
 
 ### Core Design Patterns
 
-- **`init_*` functions**: Capture config into `functools.partial`, return zero-arg `Callable`.
+- **`init_*` functions**: Capture config and return zero-arg `Callable`.
   Client is created lazily when the callable is invoked.
-- **`gen_*` functions**: Take a client + resource name, return a tuple of `@safe`-decorated
-  closures (writer, reader, deleter).
+- **`bind_*` functions**: Take a client + resource name, return one `@safe`-decorated
+  operation closure.
 - **Two-layer config init**: Low-level `init_*_from_config` returns client factory;
   high-level `init_*_workspace_from_config` binds resource names and returns ready-to-use factories.
 - **`TYPE_CHECKING` guards**: Heavy optional-dependency types imported only under
   `if TYPE_CHECKING:` to avoid runtime import failures.
 - **`__init__.py` is empty**: No re-exports. Users import directly from submodules:
-  `from fyuneru.redis_toolkit import gen_redis_set`.
+  `from fyuneru.redis_toolkit import bind_redis_set_writer`.
 
 ## Code Style
 
@@ -109,7 +109,7 @@ skip-magic-trailing-comma = false
 
 | Context    | Convention            | Examples                                    |
 |------------|-----------------------|---------------------------------------------|
-| Functions  | `snake_case`          | `init_client`, `gen_s3worker`, `parse_blob_uri` |
+| Functions  | `snake_case`          | `init_client`, `bind_s3_reader`, `parse_blob_uri` |
 | Variables  | `snake_case`          | `set_name`, `bucket_id`, `override_path`    |
 | Classes    | `PascalCase`          | `LogLevel`, `RedisSetReader`, `NonSerializable` |
 | Constants  | `UPPER_SNAKE_CASE`    | `BLOB_SCHEME = "blob"`                      |

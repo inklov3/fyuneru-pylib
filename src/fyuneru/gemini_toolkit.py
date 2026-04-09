@@ -29,7 +29,7 @@ def init_client(
     )
 
 
-def gen_content_config(
+def build_content_config(
     schema: dict[str, Any],
     response_mime_type: str = "application/json",
     temperature: float = 0,

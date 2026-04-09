@@ -4,7 +4,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from fyuneru.config import read_config_with_override
-from fyuneru.s3_source import load_source_registry, parse_blob_uri
+from fyuneru.s3_source import bind_source_reader, load_source_registry, parse_blob_uri
 
 
 def test_parse_blob_uri_normal():
@@ -102,6 +102,42 @@ s3_sources:
         assert registry["backup"]["bucket"] == "backup-bucket"
 
 
+def test_load_source_registry_validate_required_fields():
+    try:
+        load_source_registry(
+            {
+                "s3_sources": [
+                    {
+                        "source_id": "my-images",
+                        "endpoint": "https://s3.example.com",
+                        "bucket": "my-bucket",
+                        "access_key_id": "ak",
+                    }
+                ]
+            }
+        )
+        assert False, "应抛出 ValueError"
+    except ValueError as e:
+        assert "缺少字段" in str(e)
+
+
+def test_bind_source_reader_with_unknown_bucket():
+    read = bind_source_reader(
+        {
+            "known": {
+                "source_id": "known",
+                "endpoint": "https://s3.example.com",
+                "bucket": "known-bucket",
+                "access_key_id": "ak",
+                "secret_access_key": "sk",
+            }
+        }
+    )
+    result = read("blob://unknown/path.txt")
+    error = result.failure()
+    assert "unsupport bucket id" in str(error)
+
+
 if __name__ == "__main__":
     test_parse_blob_uri_normal()
     test_parse_blob_uri_simple_key()
@@ -110,4 +146,6 @@ if __name__ == "__main__":
     test_parse_blob_uri_empty_key()
     test_parse_blob_uri_no_key()
     test_load_source_registry_with_override()
+    test_load_source_registry_validate_required_fields()
+    test_bind_source_reader_with_unknown_bucket()
     print("所有 parse_blob_uri 测试通过")

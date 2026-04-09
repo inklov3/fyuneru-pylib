@@ -1,6 +1,19 @@
+from pathlib import Path
+from tempfile import TemporaryDirectory
+
 from loguru import logger
 
-from fyuneru.logger import init_logger
+from fyuneru.logger import configure_logger
 
-init_logger()
-logger.info("Hello, world!")
+
+def test_configure_logger():
+    with TemporaryDirectory() as tmp:
+        log_dir = Path(tmp)
+        configure_logger(log_dir=log_dir).unwrap()
+        logger.info("Hello, world!")
+        assert (log_dir / "latest.log").exists()
+
+
+if __name__ == "__main__":
+    test_configure_logger()
+    print("logger 测试通过")
