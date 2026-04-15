@@ -16,7 +16,7 @@ def init_client(
         endpoint: 自定义后端地址
 
     Returns:
-        Client 实例
+        Callable[[], Client] 惰性初始化器
     """
     return partial(
         Client,

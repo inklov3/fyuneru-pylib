@@ -33,8 +33,8 @@ from fyuneru.logger import configure_logger, tqdm_loguru, LogLevel
 
 # LogLevel: INFO, WARNING, ERROR, DEBUG
 
-@safe
-configure_logger(level: str = LogLevel.INFO, log_dir: Path | None = None) -> None
+configure_logger(level: str = LogLevel.INFO, log_dir: Path | None = None) -> ResultE[None]
+# Decorated with @safe; call .unwrap() to raise on failure.
 # Configures loguru logger with console output + optional file output.
 # When log_dir is set, creates timestamped log file and latest.log.
 
@@ -211,6 +211,9 @@ load_source_registry(
 ) -> dict[str, dict]
 # Reads config["s3_sources"] list, validates required fields,
 # converts to dict keyed by source_id.
+# Raises KeyError if "s3_sources" key is missing.
+# Raises ValueError if s3_sources is not a list, any entry is not a dict,
+# any required field is missing, or source_id is not a non-empty string.
 # When duplicate source_id is found, logs warning and uses later entry to override earlier.
 
 bind_source_reader(registry: dict[str, dict]) -> Callable[[str], ResultE[bytes]]
@@ -341,6 +344,7 @@ s3:
   access_key_id: xxx
   secret_access_key: xxx
   region_name: us-east-1  # optional
+  bucket: my-bucket        # required by init_s3_workspace_from_config
 
 mongo:
   uri: mongodb://localhost:27017
