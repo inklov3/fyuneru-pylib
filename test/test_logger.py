@@ -4,12 +4,13 @@ from tempfile import TemporaryDirectory
 from loguru import logger
 
 from fyuneru.logger import configure_logger
+from fyuneru.result import unwrap
 
 
 def test_configure_logger():
     with TemporaryDirectory() as tmp:
         log_dir = Path(tmp)
-        configure_logger(log_dir=log_dir).unwrap()
+        unwrap(configure_logger(log_dir=log_dir))
         logger.info("Hello, world!")
         assert (log_dir / "latest.log").exists()
 

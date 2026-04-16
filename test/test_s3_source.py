@@ -4,6 +4,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from fyuneru.config import read_config_with_override
+from fyuneru.result import Failure, is_failure
 from fyuneru.s3_source import bind_source_reader, load_source_registry, parse_blob_uri
 
 
@@ -134,8 +135,9 @@ def test_bind_source_reader_with_unknown_bucket():
         }
     )
     result = read("blob://unknown/path.txt")
-    error = result.failure()
-    assert "unsupport bucket id" in str(error)
+    assert is_failure(result)
+    assert isinstance(result, Failure)
+    assert "unsupport bucket id" in str(result.error)
 
 
 if __name__ == "__main__":

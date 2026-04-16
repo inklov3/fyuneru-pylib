@@ -5,7 +5,8 @@ from boto3 import Session
 from botocore.config import Config
 from botocore.response import StreamingBody
 from mypy_boto3_s3.client import S3Client
-from returns.result import ResultE, safe
+
+from fyuneru.result import ResultE, safe
 
 
 class ObjectStorageWriter(Protocol):

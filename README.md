@@ -1,6 +1,6 @@
 # fyuneru
 
-> Python 工具库，按统一的函数式约定封装常用基础设施组件。核心模式是：`init_*` 做惰性初始化，`bind_*` 绑定资源生成可组合操作函数，`build_*` 构建组合对象，错误通过 `returns.Result` 显式返回。
+> Python 工具库，按统一的函数式约定封装常用基础设施组件。核心模式是：`init_*` 做惰性初始化，`bind_*` 绑定资源生成可组合操作函数，`build_*` 构建组合对象，错误通过 `fyuneru.result.Result` 显式返回。
 
 ## 项目定位
 
@@ -15,7 +15,7 @@
 - `init_*`：返回 `Callable`，调用时才真正创建 client 或 handle
 - `bind_*`：绑定 client + 资源名，返回单一操作函数
 - `build_*`：构建已绑定的组合对象
-- `@safe`：把可能失败的操作包装成 `ResultE[...]`；需要值时再 `.unwrap()`
+- `@safe`：把可能失败的操作包装成 `ResultE[...]`；需要值时使用 `unwrap(result)`
 - 顶层 `fyuneru` 不提供统一 re-export，建议直接从具体子模块导入
 
 ## 安装
@@ -71,8 +71,9 @@ uv add "fyuneru[redis,s3] @ git+https://github.com/inklov3/fyuneru-pylib.git"
 from pathlib import Path
 
 from fyuneru.logger import LogLevel, configure_logger, tqdm_loguru
+from fyuneru.result import unwrap
 
-configure_logger(level=LogLevel.INFO, log_dir=Path("./logs")).unwrap()
+unwrap(configure_logger(level=LogLevel.INFO, log_dir=Path("./logs")))
 
 for item in tqdm_loguru(items, desc="Processing"):
     process(item)
@@ -139,6 +140,7 @@ from fyuneru.redis_toolkit import (
     calculate_checkpoint_key,
     init_client_standalone,
 )
+from fyuneru.result import unwrap
 
 redis = init_client_standalone(
     host="localhost",
@@ -156,14 +158,15 @@ write_set = bind_redis_set_writer(redis, set_name=checkpoint_key)
 read_set = bind_redis_set_reader(redis, set_name=checkpoint_key)
 delete_set = bind_redis_set_deleter(redis, set_name=checkpoint_key)
 
-write_set("item-001").unwrap()
-assert read_set("item-001").unwrap() is True
-delete_set("item-001").unwrap()
+unwrap(write_set("item-001"))
+assert unwrap(read_set("item-001")) is True
+unwrap(delete_set("item-001"))
 ```
 
 ### S3 对象存储
 
 ```python
+from fyuneru.result import unwrap
 from fyuneru.s3_toolkit import (
     bind_s3_deleter,
     bind_s3_lister,
@@ -184,10 +187,10 @@ read = bind_s3_reader(client, bucket="my-bucket")
 delete = bind_s3_deleter(client, bucket="my-bucket")
 lister = bind_s3_lister(client, bucket="my-bucket")
 
-write("demo.txt", b"hello").unwrap()
-data = read("demo.txt").unwrap()
-keys = lister(prefix="data/", suffix=".parquet").unwrap()
-delete("demo.txt").unwrap()
+unwrap(write("demo.txt", b"hello"))
+data = unwrap(read("demo.txt"))
+keys = unwrap(lister(prefix="data/", suffix=".parquet"))
+unwrap(delete("demo.txt"))
 ```
 
 ### S3 多源读取
@@ -198,6 +201,7 @@ delete("demo.txt").unwrap()
 from pathlib import Path
 
 from fyuneru.config import read_config_with_override
+from fyuneru.result import unwrap
 from fyuneru.s3_source import bind_source_reader, load_source_registry
 
 # 无覆盖层
@@ -212,7 +216,7 @@ config = read_config_with_override(
 registry = load_source_registry(config)
 read = bind_source_reader(registry)
 
-data = read("blob://my-images/photos/2024/img001.jpg").unwrap()
+data = unwrap(read("blob://my-images/photos/2024/img001.jpg"))
 ```
 
 ### MongoDB

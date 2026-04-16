@@ -7,7 +7,8 @@ from functools import partial
 from typing import Protocol
 
 from redis import Redis, RedisCluster
-from returns.result import ResultE, safe
+
+from fyuneru.result import ResultE, safe
 
 
 def init_client_standalone(

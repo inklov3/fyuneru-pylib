@@ -6,8 +6,9 @@ from datetime import datetime
 from pathlib import Path
 from sys import stdout
 
-from returns.result import safe
 from tqdm import tqdm
+
+from fyuneru.result import safe
 
 
 class LogLevel:

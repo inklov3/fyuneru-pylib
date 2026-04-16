@@ -1,6 +1,6 @@
 # fyuneru — API Reference for Claude Code
 
-Python utility library wrapping common infrastructure components with unified, composable functional interfaces. Uses `returns` for safe error handling and lazy client initialization.
+Python utility library wrapping common infrastructure components with unified, composable functional interfaces. Uses `fyuneru.result` for explicit error handling and lazy client initialization.
 
 ## Installation
 
@@ -21,7 +21,7 @@ uv add "fyuneru[gemini] @ git+https://github.com/inklov3/fyuneru-pylib.git"     
 - **`init_*`** returns a `Callable` that lazily creates a client when called
 - **`bind_*`** binds client/resources and returns a single composable operation function
 - **`build_*`** builds higher-level composed objects
-- **`@safe`** from `returns` wraps return values in `Result` type; use `.unwrap()` to extract the value
+- **`@safe`** wraps return values in `Result` type; use `unwrap(result)` to extract the value
 - **Checkpoint** is implemented by composing `calculate_checkpoint_key()` + redis set binders — no dedicated abstraction
 
 ## Modules
@@ -34,7 +34,7 @@ from fyuneru.logger import configure_logger, tqdm_loguru, LogLevel
 # LogLevel: INFO, WARNING, ERROR, DEBUG
 
 configure_logger(level: str = LogLevel.INFO, log_dir: Path | None = None) -> ResultE[None]
-# Decorated with @safe; call .unwrap() to raise on failure.
+# Decorated with @safe; call unwrap(result) to raise on failure.
 # Configures loguru logger with console output + optional file output.
 # When log_dir is set, creates timestamped log file and latest.log.
 
@@ -147,12 +147,14 @@ calculate_checkpoint_key(checkpoint: str, task: str, worker: str) -> str
 
 **Checkpoint pattern:**
 ```python
+from fyuneru.result import unwrap
+
 checkpoint_key = calculate_checkpoint_key(checkpoint="step1", task="etl", worker="w1")
 advance = bind_redis_set_writer(redis, set_name=checkpoint_key)
 is_past = bind_redis_set_reader(redis, set_name=checkpoint_key)
 delete = bind_redis_set_deleter(redis, set_name=checkpoint_key)
-advance("item-001").unwrap()
-assert is_past("item-001").unwrap() is True
+unwrap(advance("item-001"))
+assert unwrap(is_past("item-001")) is True
 ```
 
 ### s3_toolkit (`fyuneru.s3_toolkit`)
@@ -224,12 +226,13 @@ bind_source_reader(registry: dict[str, dict]) -> Callable[[str], ResultE[bytes]]
 **Usage:**
 ```python
 from fyuneru.config import read_config_with_override
+from fyuneru.result import unwrap
 from fyuneru.s3_source import bind_source_reader, load_source_registry
 
 config = read_config_with_override(Path("config.yml"))
 registry = load_source_registry(config)
 read = bind_source_reader(registry)
-data = read("blob://my-images/photos/img001.jpg").unwrap()
+data = unwrap(read("blob://my-images/photos/img001.jpg"))
 ```
 
 **Overlay note:**

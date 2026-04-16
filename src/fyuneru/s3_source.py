@@ -6,8 +6,8 @@ from collections.abc import Callable
 from urllib.parse import urlparse
 
 from loguru import logger
-from returns.result import ResultE, safe
 
+from fyuneru.result import Failure, ResultE, safe, unwrap
 from fyuneru.s3_toolkit import ObjectStorageReader, bind_s3_reader, init_client
 
 BLOB_SCHEME = "blob"
@@ -89,10 +89,16 @@ def bind_source_reader(
         return readers[bucket_id]
 
     def read(uri: str) -> ResultE[bytes]:
-        return parse_uri(uri).bind(
-            lambda parsed: ensure_reader(parsed[0]).bind(
-                lambda reader: reader(parsed[1])
-            )
-        )
+        parsed_result = parse_uri(uri)
+        if isinstance(parsed_result, Failure):
+            return parsed_result
+
+        bucket_id, key = unwrap(parsed_result)
+        reader_result = ensure_reader(bucket_id)
+        if isinstance(reader_result, Failure):
+            return reader_result
+
+        reader = unwrap(reader_result)
+        return reader(key)
 
     return read
