@@ -26,9 +26,8 @@ s3 = [
     "mypy-boto3-s3>=1.42.37",
 ]
 pipeline = [
-  "fyuneru[redis,s3]",
+  "fyuneru[redis]",
   "dramatiq>=2.0.1",
-  "pymongo>=4.16.0",
 ]
 media = [
     "av>=16.1.0",

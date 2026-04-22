@@ -380,10 +380,7 @@ mongo = [
     { name = "pymongo" },
 ]
 pipeline = [
-    { name = "boto3" },
     { name = "dramatiq" },
-    { name = "mypy-boto3-s3" },
-    { name = "pymongo" },
     { name = "redis" },
 ]
 redis = [
@@ -406,13 +403,12 @@ requires-dist = [
     { name = "av", marker = "extra == 'media'", specifier = ">=16.1.0" },
     { name = "boto3", marker = "extra == 's3'", specifier = ">=1.42.45" },
     { name = "dramatiq", marker = "extra == 'pipeline'", specifier = ">=2.0.1" },
-    { name = "fyuneru", extras = ["redis", "s3"], marker = "extra == 'pipeline'" },
+    { name = "fyuneru", extras = ["redis"], marker = "extra == 'pipeline'" },
     { name = "google-genai", marker = "extra == 'gemini'", specifier = ">=1.65.0" },
     { name = "loguru", specifier = ">=0.7.3" },
     { name = "mypy-boto3-s3", marker = "extra == 's3'", specifier = ">=1.42.37" },
     { name = "pillow", marker = "extra == 'media'", specifier = ">=12.1.1" },
     { name = "pymongo", marker = "extra == 'mongo'", specifier = ">=4.16.0" },
-    { name = "pymongo", marker = "extra == 'pipeline'", specifier = ">=4.16.0" },
     { name = "pyyaml", specifier = ">=6.0.2" },
     { name = "redis", marker = "extra == 'redis'", specifier = ">=7.1.0" },
     { name = "tqdm", specifier = ">=4.67.3" },
