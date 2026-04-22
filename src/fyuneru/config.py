@@ -85,17 +85,20 @@ def init_redis_from_config(
 
     返回 Callable[[], Redis] 或 Callable[[], RedisCluster]。
     """
-    from fyuneru import redis_toolkit
+    from fyuneru.redis_toolkit import (
+        init_client_cluster,
+        init_client_standalone,
+    )
 
     redis_cfg = config["redis"]
     extra: dict = {}
     if "password" in redis_cfg:
         extra["password"] = redis_cfg["password"]
     if redis_cfg.get("cluster", False):
-        return redis_toolkit.init_client_cluster(
+        return init_client_cluster(
             host=redis_cfg["host"], port=redis_cfg["port"], **extra
         )
-    return redis_toolkit.init_client_standalone(
+    return init_client_standalone(
         host=redis_cfg["host"],
         port=redis_cfg["port"],
         db=redis_cfg.get("db", 0),
@@ -105,10 +108,10 @@ def init_redis_from_config(
 
 def init_s3_from_config(config: dict) -> Callable[[], "S3Client"]:
     """从 's3' 段构建 s3 client initializer。"""
-    from fyuneru import s3_toolkit
+    from fyuneru.s3_toolkit import init_client as _init_client
 
     s3_cfg = config["s3"]
-    return s3_toolkit.init_client(
+    return _init_client(
         endpoint=s3_cfg["endpoint"],
         access_key_id=s3_cfg["access_key_id"],
         secret_access_key=s3_cfg["secret_access_key"],
@@ -118,13 +121,13 @@ def init_s3_from_config(config: dict) -> Callable[[], "S3Client"]:
 
 def init_mongo_from_config(config: dict) -> Callable[[], "MongoClient"]:
     """从 'mongo' 段构建 mongo client initializer。"""
-    from fyuneru import mongo_toolkit
+    from fyuneru.mongo_toolkit import init_client as _init_client
 
     mongo_cfg = config["mongo"]
     kwargs: dict = {"uri": mongo_cfg["uri"]}
     if "timeout" in mongo_cfg:
         kwargs["timeout"] = mongo_cfg["timeout"]
-    return mongo_toolkit.init_client(**kwargs)
+    return _init_client(**kwargs)
 
 
 def init_llm_from_config(config: dict) -> Callable[[], "Client"]:
@@ -132,9 +135,9 @@ def init_llm_from_config(config: dict) -> Callable[[], "Client"]:
     llm_cfg = config["llm"]
     provider = llm_cfg["provider"]
     if provider == "gemini":
-        from fyuneru import gemini_toolkit
+        from fyuneru.gemini_toolkit import init_client as _init_client
 
-        return gemini_toolkit.init_client(
+        return _init_client(
             api_key=llm_cfg["api_key"],
             endpoint=llm_cfg["endpoint"],
             api_version=llm_cfg.get("api_version", "v1beta"),
@@ -156,10 +159,15 @@ def init_s3_workspace_from_config(
 
     's3' 段必须包含 'bucket' 字段。
     """
-    from fyuneru import s3_toolkit
+    from fyuneru.s3_toolkit import (  # noqa: PLC0415
+        bind_s3_deleter,
+        bind_s3_reader,
+        bind_s3_writer,
+        init_client,
+    )
 
     s3_cfg = config["s3"]
-    init = s3_toolkit.init_client(
+    init = init_client(
         endpoint=s3_cfg["endpoint"],
         access_key_id=s3_cfg["access_key_id"],
         secret_access_key=s3_cfg["secret_access_key"],
@@ -170,9 +178,9 @@ def init_s3_workspace_from_config(
     def create_workspace():
         client = init()
         return (
-            s3_toolkit.bind_s3_writer(client, bucket),
-            s3_toolkit.bind_s3_reader(client, bucket),
-            s3_toolkit.bind_s3_deleter(client, bucket),
+            bind_s3_writer(client, bucket),
+            bind_s3_reader(client, bucket),
+            bind_s3_deleter(client, bucket),
         )
 
     return create_workspace
@@ -183,10 +191,10 @@ def init_mongo_database_from_config(config: dict) -> Callable[[], "Database"]:
 
     'mongo' 段必须包含 'db' 字段。
     """
-    from fyuneru import mongo_toolkit
+    from fyuneru.mongo_toolkit import init_client as _init_client
 
     mongo_cfg = config["mongo"]
-    init = mongo_toolkit.init_client(
+    init = _init_client(
         uri=mongo_cfg["uri"],
         **({} if "timeout" not in mongo_cfg else {"timeout": mongo_cfg["timeout"]}),
     )

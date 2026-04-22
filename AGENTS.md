@@ -2,7 +2,7 @@
 
 Python utility library wrapping common infrastructure components (Redis, S3, MongoDB,
 Dramatiq, Google Gemini) with unified, composable functional interfaces.
-Uses `returns` library for safe error handling and lazy initialization patterns.
+Local `Success`/`Failure` result type for safe error handling and lazy initialization.
 
 ## Build & Test Commands
 
@@ -55,7 +55,8 @@ uv run pyrefly check src/
 - Package manager: **uv** (not pip, not poetry)
 - Linter/formatter: ruff
 - Type checker: pyrefly
-- Core deps: loguru, pyyaml, returns, tqdm
+- Core deps: loguru, pyyaml, tqdm
+- **Local result type**: `src/fyuneru/result.py` 实现 `Success` / `Failure` / `@safe` (非外部 returns 库)
 - Optional deps grouped in `pyproject.toml`: redis, s3, pipeline, media, gemini, mongo
 
 ## Architecture
@@ -120,7 +121,7 @@ skip-magic-trailing-comma = false
 Enforced by ruff (`select = ["I"]`), isort-compatible ordering:
 
 1. Standard library (`from collections.abc import Callable`, `from functools import partial`)
-2. Third-party (`from returns.result import safe`, `from redis import Redis`)
+2. Third-party (`from fyuneru.result import safe`, `from redis import Redis`)
 3. Local/project (`from fyuneru.config import read_config_with_override`)
 
 Each group separated by a blank line. Prefer `from X import Y` over bare `import X`.
@@ -134,13 +135,13 @@ Each group separated by a blank line. Prefer `from X import Y` over bare `import
 ### Type Annotations
 
 - Use modern Python 3.11+ syntax: `str | None`, `dict[str, Any]`, `tuple[str, str]`
-- `ResultE[T]` from `returns` library for typed error results
+- `ResultE[T]` from local `fyuneru.result` for typed error results
 - `Protocol` classes for structural typing of returned callables
 - `Callable[[], T]` for factory return types
 
 ## Error Handling
 
-- **`@safe` decorator** from `returns.result`: wraps functions returning `ResultE[T]`
+- **`@safe` decorator** from `fyuneru.result`: wraps functions returning `ResultE[T]`
   (alias for `Result[T, Exception]`) instead of raising.
 - **Protocol classes** define type signatures for safe-wrapped callables.
 - **Guard clauses** with `raise ValueError(...)` / `raise KeyError(...)` for input validation.
