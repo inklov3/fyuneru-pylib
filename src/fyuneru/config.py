@@ -159,7 +159,7 @@ def init_s3_workspace_from_config(
 
     's3' 段必须包含 'bucket' 字段。
     """
-    from fyuneru.s3_toolkit import (  # noqa: PLC0415
+    from fyuneru.s3_toolkit import (
         bind_s3_deleter,
         bind_s3_reader,
         bind_s3_writer,
