@@ -1,5 +1,5 @@
 from collections.abc import Callable
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from boto3 import Session
 from botocore.config import Config
@@ -7,6 +7,9 @@ from botocore.response import StreamingBody
 from mypy_boto3_s3.client import S3Client
 
 from fyuneru.result import ResultE, safe
+
+if TYPE_CHECKING:
+    from mypy_boto3_s3.client import S3Client
 
 
 class ObjectStorageWriter(Protocol):
@@ -55,6 +58,50 @@ def init_client(
         )
 
     return create_client
+
+
+def init_client_from_config(config: dict) -> Callable[[], S3Client]:
+    """从配置构建 s3 client initializer。
+
+    config["s3"] 必须包含 endpoint, access_key_id, secret_access_key。可选: region_name。
+    """
+    s3_cfg = config["s3"]
+    return init_client(
+        endpoint=s3_cfg["endpoint"],
+        access_key_id=s3_cfg["access_key_id"],
+        secret_access_key=s3_cfg["secret_access_key"],
+        region_name=s3_cfg.get("region_name"),
+    )
+
+
+def init_workspace_from_config(
+    config: dict,
+) -> Callable[
+    [], tuple[ObjectStorageWriter, ObjectStorageReader, ObjectStorageDeleter]
+]:
+    """从配置构建 s3 workspace initializer。
+
+    config["s3"] 必须包含 endpoint, access_key_id, secret_access_key, bucket。可选: region_name。
+    返回可直接使用的 (writer, reader, deleter) 元组工厂。
+    """
+    s3_cfg = config["s3"]
+    init = init_client(
+        endpoint=s3_cfg["endpoint"],
+        access_key_id=s3_cfg["access_key_id"],
+        secret_access_key=s3_cfg["secret_access_key"],
+        region_name=s3_cfg.get("region_name"),
+    )
+    bucket = s3_cfg["bucket"]
+
+    def create_workspace():
+        client = init()
+        return (
+            bind_s3_writer(client, bucket),
+            bind_s3_reader(client, bucket),
+            bind_s3_deleter(client, bucket),
+        )
+
+    return create_workspace
 
 
 def bind_s3_writer(client: S3Client, bucket: str) -> ObjectStorageWriter:

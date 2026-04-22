@@ -3,7 +3,7 @@
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from fyuneru.config import read_config, read_config_with_override
+from fyuneru.config import read_config, read_config_from_paths
 
 
 def _write_yaml(path: Path, content: str) -> None:
@@ -75,7 +75,7 @@ s3_sources:
 """,
         )
 
-        merged = read_config_with_override(base_path, pod_path)
+        merged = read_config_from_paths([base_path, pod_path])
         assert merged["redis"]["host"] == "pod-host"
         assert merged["redis"]["port"] == 6379
         assert merged["service"]["retries"] == 3
@@ -105,7 +105,7 @@ llm:
 """,
         )
 
-        assert read_config_with_override(base_path, None) == read_config(base_path)
+        assert read_config_from_paths([base_path]) == read_config(base_path)
 
 
 if __name__ == "__main__":

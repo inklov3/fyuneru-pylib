@@ -4,11 +4,14 @@ Redis 工具类
 
 from collections.abc import Callable
 from functools import partial
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from redis import Redis, RedisCluster
 
 from fyuneru.result import ResultE, safe
+
+if TYPE_CHECKING:
+    from redis import Redis, RedisCluster
 
 
 def init_client_standalone(
@@ -19,6 +22,29 @@ def init_client_standalone(
 
 def init_client_cluster(host: str, port: int, **kwargs) -> Callable[[], RedisCluster]:
     return partial(RedisCluster, host=host, port=port, **kwargs)
+
+
+def init_client_from_config(
+    config: dict,
+) -> Callable[[], Redis] | Callable[[], RedisCluster]:
+    """从配置构建 redis client initializer。
+
+    config["redis"] 必须包含 host, port。可选: password, cluster, db。
+    """
+    redis_cfg = config["redis"]
+    extra: dict = {}
+    if "password" in redis_cfg:
+        extra["password"] = redis_cfg["password"]
+    if redis_cfg.get("cluster", False):
+        return init_client_cluster(
+            host=redis_cfg["host"], port=redis_cfg["port"], **extra
+        )
+    return init_client_standalone(
+        host=redis_cfg["host"],
+        port=redis_cfg["port"],
+        db=redis_cfg.get("db", 0),
+        **extra,
+    )
 
 
 def calculate_checkpoint_key(checkpoint: str, task: str, worker: str) -> str:

@@ -2,30 +2,17 @@
 配置构建器
 """
 
-from collections.abc import Callable
+import os
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from yaml import safe_load
 
-if TYPE_CHECKING:
-    from google.genai import Client
-    from mypy_boto3_s3.client import S3Client
-    from pymongo import MongoClient
-    from pymongo.database import Database
-    from redis import Redis, RedisCluster
-
-    from fyuneru.s3_toolkit import (
-        ObjectStorageDeleter,
-        ObjectStorageReader,
-        ObjectStorageWriter,
-    )
+from fyuneru.result import safe, unwrap
 
 
+@safe
 def _read_yaml_mapping(config: Path) -> dict[str, Any]:
-    suffix = config.suffix
-    if suffix not in (".yaml", ".yml"):
-        raise ValueError(f"不支持的配置文件格式: {suffix}")
     loaded = safe_load(config.read_text(encoding="utf-8"))
     if loaded is None:
         return {}
@@ -34,8 +21,34 @@ def _read_yaml_mapping(config: Path) -> dict[str, Any]:
     return loaded
 
 
+def read_config_from_paths(paths: list[Path]) -> dict[str, Any]:
+    if not paths:
+        raise ValueError("配置路径列表不能为空")
+    merged: dict[str, Any] = {}
+    for p in paths:
+        if not p:
+            raise ValueError("配置路径不能为空")
+        if not p.exists():
+            raise FileNotFoundError(f"配置文件不存在: {p}")
+        loaded = unwrap(_read_yaml_mapping(p))
+        merged = _merge_config_value(merged, loaded, ())
+    return merged
+
+
+def read_config_from_env() -> dict[str, Any]:
+    env_var = "FYUNERU_CONFIG_PATHS"
+    value = os.environ.get(env_var)
+    if not value:
+        raise ValueError(f"环境变量 {env_var} 未设置")
+    path_strs = value.split(":")
+    if not path_strs or path_strs == [""]:
+        raise ValueError(f"环境变量 {env_var} 不能为空")
+    paths = [Path(p) for p in path_strs]
+    return read_config_from_paths(paths)
+
+
 def read_config(config: Path) -> dict[str, list | dict]:
-    return _read_yaml_mapping(config)
+    return read_config_from_paths([config])
 
 
 def _merge_config_value(base: Any, override: Any, path: tuple[str, ...]) -> Any:
@@ -56,147 +69,3 @@ def _merge_config_value(base: Any, override: Any, path: tuple[str, ...]) -> Any:
         return [*base, *override]
 
     return override
-
-
-def read_config_with_override(
-    base: Path,
-    override: Path | None = None,
-) -> dict[str, Any]:
-    """读取 base 配置，并可选叠加一层 override 配置。"""
-    base_config = _read_yaml_mapping(base)
-    if override is None:
-        return base_config
-    override_config = _read_yaml_mapping(override)
-    merged = _merge_config_value(base_config, override_config, ())
-    if not isinstance(merged, dict):
-        raise ValueError("合并后的配置根节点必须是对象映射")
-    return merged
-
-
-# ---------------------------------------------------------------------------
-# 底层 client initializer — 返回裸客户端工厂，与各 toolkit 的 init_* 对齐
-# ---------------------------------------------------------------------------
-
-
-def init_redis_from_config(
-    config: dict,
-) -> Callable[[], "Redis"] | Callable[[], "RedisCluster"]:
-    """从 'redis' 段构建 redis client initializer。
-
-    返回 Callable[[], Redis] 或 Callable[[], RedisCluster]。
-    """
-    from fyuneru.redis_toolkit import (
-        init_client_cluster,
-        init_client_standalone,
-    )
-
-    redis_cfg = config["redis"]
-    extra: dict = {}
-    if "password" in redis_cfg:
-        extra["password"] = redis_cfg["password"]
-    if redis_cfg.get("cluster", False):
-        return init_client_cluster(
-            host=redis_cfg["host"], port=redis_cfg["port"], **extra
-        )
-    return init_client_standalone(
-        host=redis_cfg["host"],
-        port=redis_cfg["port"],
-        db=redis_cfg.get("db", 0),
-        **extra,
-    )
-
-
-def init_s3_from_config(config: dict) -> Callable[[], "S3Client"]:
-    """从 's3' 段构建 s3 client initializer。"""
-    from fyuneru.s3_toolkit import init_client as _init_client
-
-    s3_cfg = config["s3"]
-    return _init_client(
-        endpoint=s3_cfg["endpoint"],
-        access_key_id=s3_cfg["access_key_id"],
-        secret_access_key=s3_cfg["secret_access_key"],
-        region_name=s3_cfg.get("region_name"),
-    )
-
-
-def init_mongo_from_config(config: dict) -> Callable[[], "MongoClient"]:
-    """从 'mongo' 段构建 mongo client initializer。"""
-    from fyuneru.mongo_toolkit import init_client as _init_client
-
-    mongo_cfg = config["mongo"]
-    kwargs: dict = {"uri": mongo_cfg["uri"]}
-    if "timeout" in mongo_cfg:
-        kwargs["timeout"] = mongo_cfg["timeout"]
-    return _init_client(**kwargs)
-
-
-def init_llm_from_config(config: dict) -> Callable[[], "Client"]:
-    """从 'llm' 段构建 LLM client initializer。目前支持 gemini。"""
-    llm_cfg = config["llm"]
-    provider = llm_cfg["provider"]
-    if provider == "gemini":
-        from fyuneru.gemini_toolkit import init_client as _init_client
-
-        return _init_client(
-            api_key=llm_cfg["api_key"],
-            endpoint=llm_cfg["endpoint"],
-            api_version=llm_cfg.get("api_version", "v1beta"),
-        )
-    raise ValueError(f"不支持的 LLM provider: {provider}")
-
-
-# ---------------------------------------------------------------------------
-# 高层 workspace initializer — 绑定配置中的资源名称，返回可直接使用的对象工厂
-# ---------------------------------------------------------------------------
-
-
-def init_s3_workspace_from_config(
-    config: dict,
-) -> Callable[
-    [], tuple["ObjectStorageWriter", "ObjectStorageReader", "ObjectStorageDeleter"]
-]:
-    """从 's3' 段构建 s3 workspace initializer。
-
-    's3' 段必须包含 'bucket' 字段。
-    """
-    from fyuneru.s3_toolkit import (
-        bind_s3_deleter,
-        bind_s3_reader,
-        bind_s3_writer,
-        init_client,
-    )
-
-    s3_cfg = config["s3"]
-    init = init_client(
-        endpoint=s3_cfg["endpoint"],
-        access_key_id=s3_cfg["access_key_id"],
-        secret_access_key=s3_cfg["secret_access_key"],
-        region_name=s3_cfg.get("region_name"),
-    )
-    bucket = s3_cfg["bucket"]
-
-    def create_workspace():
-        client = init()
-        return (
-            bind_s3_writer(client, bucket),
-            bind_s3_reader(client, bucket),
-            bind_s3_deleter(client, bucket),
-        )
-
-    return create_workspace
-
-
-def init_mongo_database_from_config(config: dict) -> Callable[[], "Database"]:
-    """从 'mongo' 段构建 MongoDB Database initializer。
-
-    'mongo' 段必须包含 'db' 字段。
-    """
-    from fyuneru.mongo_toolkit import init_client as _init_client
-
-    mongo_cfg = config["mongo"]
-    init = _init_client(
-        uri=mongo_cfg["uri"],
-        **({} if "timeout" not in mongo_cfg else {"timeout": mongo_cfg["timeout"]}),
-    )
-    db = mongo_cfg["db"]
-    return lambda: init()[db]
