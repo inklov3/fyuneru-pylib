@@ -8,7 +8,7 @@
 
 - 推荐从子模块导入，例如 `from fyuneru.redis_toolkit import bind_redis_set_writer`
 - 默认安装只包含核心依赖；使用 Redis、MongoDB、Gemini 等能力时，需要安装对应 extra
-- `config.py` 只读取 YAML，并支持 `base.yml + pod.yml` 的单层增量覆盖；调用 `init_*_from_config` 时延迟导入对应 toolkit，避免默认安装下导入 `fyuneru.config` 就因为缺少可选依赖失败
+- `config.py` 只读取 YAML，并支持 `base.yml + pod.yml` 的单层增量覆盖；各 toolkit 模块提供 `init_*_from_config` 函数从配置构建 initializer
 
 ## 核心约定
 
@@ -53,7 +53,7 @@ uv add "fyuneru[redis,s3] @ git+https://github.com/inklov3/fyuneru-pylib.git"
 | 模块 | 说明 | 安装要求 |
 | --- | --- | --- |
 | `fyuneru.logger` | 基于 loguru 的日志初始化与 tqdm 集成 | 默认安装 |
-| `fyuneru.config` | YAML 配置读取（含单层增量覆盖），以及按配置构建各类 initializer | 默认安装；调用具体 helper 时需要对应 extra |
+| `fyuneru.config` | YAML 配置读取（含单层增量覆盖） | 默认安装 |
 | `fyuneru.converter` | pickle 字节互转、任意对象转 JSON 兼容结构 | 默认安装 |
 | `fyuneru.markdown_utils` | 去掉 Markdown 代码块包裹，保留正文 | 默认安装 |
 | `fyuneru.redis_toolkit` | Redis / RedisCluster 惰性初始化、Set 操作、checkpoint key 计算 | `redis` |
