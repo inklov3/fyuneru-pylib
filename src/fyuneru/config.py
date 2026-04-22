@@ -51,6 +51,16 @@ def read_config(config: Path) -> dict[str, list | dict]:
     return read_config_from_paths([config])
 
 
+def read_config_with_override(
+    base: Path,
+    override: Path | None = None,
+) -> dict[str, Any]:
+    """读取 base 配置，并可选叠加一层 override 配置。"""
+    if override is None:
+        return read_config_from_paths([base])
+    return read_config_from_paths([base, override])
+
+
 def _merge_config_value(base: Any, override: Any, path: tuple[str, ...]) -> Any:
     if isinstance(base, dict) and isinstance(override, dict):
         merged = dict(base)

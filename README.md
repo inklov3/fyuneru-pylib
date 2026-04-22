@@ -33,10 +33,10 @@ uv add fyuneru@git+https://github.com/inklov3/fyuneru-pylib.git
 | 安装方式 | 对应能力 | 主要模块 |
 | --- | --- | --- |
 | 默认安装 | 日志、YAML 配置、pickle/JSON 转换、Markdown 工具 | `logger`、`config`、`converter`、`markdown_utils` |
-| `fyuneru[redis]` | Redis client、Set 封装、checkpoint key 计算 | `redis_toolkit`、`config.init_redis_from_config` |
-| `fyuneru[s3]` | S3 client、对象读写删除列举、多源 `blob://` 读取 | `s3_toolkit`、`s3_source`、`config.init_s3_from_config`、`config.init_s3_workspace_from_config` |
-| `fyuneru[mongo]` | MongoClient 惰性初始化与按配置获取 `Database` | `mongo_toolkit`、`config.init_mongo_from_config`、`config.init_mongo_database_from_config` |
-| `fyuneru[gemini]` | Google Gemini client 与结构化 JSON 输出配置 | `gemini_toolkit`、`config.init_llm_from_config` |
+| `fyuneru[redis]` | Redis client、Set 封装、checkpoint key 计算 | `redis_toolkit`、`redis_toolkit.init_client_from_config` |
+| `fyuneru[s3]` | S3 client、对象读写删除列举、多源 `blob://` 读取 | `s3_toolkit`、`s3_source`、`s3_toolkit.init_client_from_config`、`s3_toolkit.init_workspace_from_config` |
+| `fyuneru[mongo]` | MongoClient 惰性初始化与按配置获取 `Database` | `mongo_toolkit`、`mongo_toolkit.init_client_from_config`、`mongo_toolkit.init_database_from_config` |
+| `fyuneru[gemini]` | Google Gemini client 与结构化 JSON 输出配置 | `gemini_toolkit`、`gemini_toolkit.init_client_from_config` |
 | `fyuneru[pipeline]` | Redis + S3 + Dramatiq + MongoDB 的组合依赖 | `dramatiq_toolkit` 及 `redis` / `s3` / `mongo` 相关模块 |
 | `fyuneru[media]` | 安装 `av` / `Pillow` 依赖，便于上层媒体处理代码复用 | 当前仓库未提供独立 `media` toolkit |
 
@@ -86,16 +86,13 @@ for item in tqdm_loguru(items, desc="Processing"):
 ```python
 from pathlib import Path
 
-from fyuneru.config import (
-    init_llm_from_config,
-    init_mongo_database_from_config,
-    init_mongo_from_config,
-    init_redis_from_config,
-    init_s3_from_config,
-    init_s3_workspace_from_config,
-    read_config,
-    read_config_with_override,
-)
+from fyuneru.config import read_config, read_config_with_override
+from fyuneru.gemini_toolkit import init_client_from_config as init_llm_client
+from fyuneru.mongo_toolkit import init_client_from_config as init_mongo_client
+from fyuneru.mongo_toolkit import init_database_from_config
+from fyuneru.redis_toolkit import init_client_from_config as init_redis_client
+from fyuneru.s3_toolkit import init_client_from_config as init_s3_client
+from fyuneru.s3_toolkit import init_workspace_from_config
 
 cfg = read_config(Path("config.yml"))
 cfg_with_pod = read_config_with_override(
@@ -104,19 +101,14 @@ cfg_with_pod = read_config_with_override(
 )
 
 # 底层 helper：返回裸 client 工厂
-redis_getter = init_redis_from_config(cfg_with_pod)
-s3_getter = init_s3_from_config(cfg_with_pod)
-mongo_getter = init_mongo_from_config(cfg_with_pod)
-llm_getter = init_llm_from_config(cfg_with_pod)
-
-redis = redis_getter()
-s3_client = s3_getter()
-mongo_client = mongo_getter()
-llm = llm_getter()
+redis = init_redis_client(cfg_with_pod)()
+s3_client = init_s3_client(cfg_with_pod)()
+mongo_client = init_mongo_client(cfg_with_pod)()
+llm = init_llm_client(cfg_with_pod)()
 
 # 高层 helper：直接绑定配置中的 bucket / db
-write, read, delete = init_s3_workspace_from_config(cfg_with_pod)()
-db = init_mongo_database_from_config(cfg_with_pod)()
+write, read, delete = init_workspace_from_config(cfg_with_pod)()
+db = init_database_from_config(cfg_with_pod)()
 ```
 
 ### Pod YAML 增量覆盖规则
@@ -221,7 +213,7 @@ data = unwrap(read("blob://my-images/photos/2024/img001.jpg"))
 
 ### MongoDB
 
-`mongo_toolkit.init_client(uri, timeout)` 只返回 `MongoClient` 工厂；如果你想直接拿到 `Database`，应通过 `config.init_mongo_database_from_config`。
+`mongo_toolkit.init_client(uri, timeout)` 只返回 `MongoClient` 工厂；如果你想直接拿到 `Database`，应通过 `mongo_toolkit.init_database_from_config`。
 
 ```python
 from fyuneru.mongo_toolkit import init_client
