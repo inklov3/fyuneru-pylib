@@ -37,7 +37,7 @@ uv add fyuneru@git+https://github.com/inklov3/fyuneru-pylib.git
 | `fyuneru[s3]` | S3 client、对象读写删除列举、多源 `blob://` 读取 | `s3_toolkit`、`s3_source`、`s3_toolkit.init_client_from_config`、`s3_toolkit.init_workspace_from_config` |
 | `fyuneru[mongo]` | MongoClient 惰性初始化与按配置获取 `Database` | `mongo_toolkit`、`mongo_toolkit.init_client_from_config`、`mongo_toolkit.init_database_from_config` |
 | `fyuneru[gemini]` | Google Gemini client 与结构化 JSON 输出配置 | `gemini_toolkit`、`gemini_toolkit.init_client_from_config` |
-| `fyuneru[pipeline]` | Redis + S3 + Dramatiq + MongoDB 的组合依赖 | `dramatiq_toolkit` 及 `redis` / `s3` / `mongo` 相关模块 |
+| `fyuneru[pipeline]` | Redis + Dramatiq 的组合依赖 | `dramatiq_toolkit` 及 `redis` 相关模块 |
 | `fyuneru[media]` | 安装 `av` / `Pillow` 依赖，便于上层媒体处理代码复用 | 当前仓库未提供独立 `media` toolkit |
 
 例如：
@@ -81,7 +81,7 @@ for item in tqdm_loguru(items, desc="Processing"):
 
 ### YAML 配置与按配置初始化
 
-`read_config` / `read_config_with_override` 只支持 `.yaml` / `.yml`。完整配置结构见 [`example.yml`](example.yml)。
+`read_config` / `read_config_with_override` 按 YAML 语义读取配置内容（当前不强制文件后缀）。完整配置结构见 [`example.yml`](example.yml)。
 
 ```python
 from pathlib import Path

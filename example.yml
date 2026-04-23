@@ -10,11 +10,11 @@ s3:
   access_key_id: xxx
   secret_access_key: xxx
   region_name: us-east-1  # 可选
-  bucket: my-workspace-bucket  # init_s3_workspace_from_config 必选
+  bucket: my-workspace-bucket  # init_workspace_from_config 必选
 
 mongo:
   uri: mongodb://localhost:27017
-  db: my_database  # init_mongo_database_from_config 必选
+  db: my_database  # init_database_from_config 必选
   timeout: 10000  # 可选
 
 llm:

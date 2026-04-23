@@ -11,7 +11,7 @@ uv add fyuneru@git+https://github.com/inklov3/fyuneru-pylib.git
 uv add "fyuneru[redis] @ git+https://github.com/inklov3/fyuneru-pylib.git"
 uv add "fyuneru[s3] @ git+https://github.com/inklov3/fyuneru-pylib.git"
 uv add "fyuneru[mongo] @ git+https://github.com/inklov3/fyuneru-pylib.git"
-uv add "fyuneru[pipeline] @ git+https://github.com/inklov3/fyuneru-pylib.git"   # Redis + S3 + Dramatiq + MongoDB
+uv add "fyuneru[pipeline] @ git+https://github.com/inklov3/fyuneru-pylib.git"   # Redis + Dramatiq
 uv add "fyuneru[media] @ git+https://github.com/inklov3/fyuneru-pylib.git"      # av + Pillow
 uv add "fyuneru[gemini] @ git+https://github.com/inklov3/fyuneru-pylib.git"     # Google Gemini
 ```
