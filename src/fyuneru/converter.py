@@ -1,5 +1,7 @@
 """数据转化器"""
 
+from __future__ import annotations
+
 from io import BytesIO
 from pickle import dump as dump_pickle
 from pickle import load as load_pickle

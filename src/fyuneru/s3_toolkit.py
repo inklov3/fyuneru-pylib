@@ -1,10 +1,11 @@
+from __future__ import annotations
+
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Protocol
 
 from boto3 import Session
 from botocore.config import Config
 from botocore.response import StreamingBody
-from mypy_boto3_s3.client import S3Client
 
 from fyuneru.result import ResultE, safe
 

@@ -2,16 +2,15 @@
 Redis 工具类
 """
 
+from __future__ import annotations
+
 from collections.abc import Callable
 from functools import partial
-from typing import TYPE_CHECKING, Protocol
+from typing import Protocol
 
 from redis import Redis, RedisCluster
 
 from fyuneru.result import ResultE, safe
-
-if TYPE_CHECKING:
-    from redis import Redis, RedisCluster
 
 
 def init_client_standalone(

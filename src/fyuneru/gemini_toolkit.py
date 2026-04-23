@@ -1,12 +1,11 @@
+from __future__ import annotations
+
 from collections.abc import Callable
 from functools import partial
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from google.genai import Client
 from google.genai.types import GenerateContentConfig, HttpOptions
-
-if TYPE_CHECKING:
-    from google.genai import Client
 
 
 def init_client(

@@ -2,6 +2,8 @@
 loguru日志模块
 """
 
+from __future__ import annotations
+
 from datetime import datetime
 from pathlib import Path
 from sys import stdout
