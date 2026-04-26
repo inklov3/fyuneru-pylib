@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections import namedtuple
+from dataclasses import dataclass
 from typing import Any
 
 from fyuneru.result import Failure, Success, is_failure, is_success
@@ -160,27 +160,36 @@ class FakeRedisClient:
         return tuple(claimed)
 
 
-def test_task_queue_send_and_consume_success() -> None:
+@dataclass(frozen=True)
+class Payload:
+    item_id: str
+    priority: int
+
+
+def test_task_queue_send_and_consume_success_dataclass() -> None:
     namespace = calculate_namespace(worker="worker-a", task="etl")
     redis_client = FakeRedisClient()
     broker = build_broker(redis_client, namespace=namespace)
 
-    called: list[dict[str, Any]] = []
+    called: list[Payload] = []
 
-    @actor(broker, queue_name="default", name="process_item")
-    def process_item(payload: dict[str, Any]) -> None:
+    @actor(
+        broker,
+        queue_name="default",
+        name="process_item",
+        payload_type=Payload,
+    )
+    def process_item(payload: Payload) -> None:
         called.append(payload)
 
-    Payload = namedtuple("Payload", ["item_id", "priority"])
-    payload = Payload(item_id="item-1", priority=3)
-    send_result = process_item.send(payload)
+    send_result = process_item.send(Payload(item_id="item-1", priority=3))
 
     assert is_success(send_result)
     worker_result = broker.run_worker(queue_name="default", stop_when_idle=True)
     assert is_success(worker_result)
     assert isinstance(worker_result, Success)
     assert worker_result.value == 1
-    assert called == [{"item_id": "item-1", "priority": 3}]
+    assert called == [Payload(item_id="item-1", priority=3)]
 
 
 def test_task_queue_failure_goes_to_xq_when_no_retry() -> None:
@@ -281,6 +290,59 @@ def test_claim_entries_accepts_list_response() -> None:
     assert len(claimed) == 1
 
 
+def test_actor_send_rejects_wrong_payload_type() -> None:
+    namespace = calculate_namespace(worker="worker-g", task="etl")
+    redis_client = FakeRedisClient()
+    broker = build_broker(redis_client, namespace=namespace)
+
+    @actor(
+        broker,
+        queue_name="default",
+        name="process_item",
+        payload_type=Payload,
+    )
+    def process_item(payload: Payload) -> None:
+        _ = payload
+
+    result = process_item.send({"item_id": "item-1", "priority": 3})
+    assert is_failure(result)
+    assert isinstance(result, Failure)
+    assert "payload 类型必须与 payload_type 一致" in str(result.error)
+
+
+def test_worker_failfast_on_payload_type_mismatch() -> None:
+    namespace = calculate_namespace(worker="worker-h", task="etl")
+    redis_client = FakeRedisClient()
+    broker = build_broker(redis_client, namespace=namespace)
+
+    @actor(
+        broker,
+        queue_name="default",
+        name="process_item",
+        payload_type=Payload,
+    )
+    def process_item(payload: Payload) -> None:
+        _ = payload
+
+    stream = f"{namespace}:default"
+    redis_client.xadd(
+        stream,
+        {
+            "id": "msg-1",
+            "name": "process_item",
+            "payload": "{\"payload_type\": \"dict\", \"payload\": {\"item_id\": \"x\", \"priority\": 1}}",
+            "attempt": "0",
+            "eta": "",
+            "created_at": "0",
+        },
+    )
+
+    result = broker.run_worker(queue_name="default", stop_when_idle=True)
+    assert is_failure(result)
+    assert isinstance(result, Failure)
+    assert "payload_type 不匹配" in str(result.error)
+
+
 def test_new_message_rejects_non_mapping_payload() -> None:
     try:
         new_message(name="task", queue_name="default", payload=("a", "b"))
@@ -314,11 +376,13 @@ def test_run_worker_returns_failure_for_invalid_message_payload() -> None:
 
 
 if __name__ == "__main__":
-    test_task_queue_send_and_consume_success()
+    test_task_queue_send_and_consume_success_dataclass()
     test_task_queue_failure_goes_to_xq_when_no_retry()
     test_task_queue_retry_uses_atomic_script()
     test_task_queue_lua_fallback_without_register_script()
     test_claim_entries_accepts_list_response()
+    test_actor_send_rejects_wrong_payload_type()
+    test_worker_failfast_on_payload_type_mismatch()
     test_new_message_rejects_non_mapping_payload()
     test_run_worker_returns_failure_for_invalid_message_payload()
     print("task_queue 测试通过")

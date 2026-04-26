@@ -7,10 +7,11 @@ from fyuneru.task_queue.broker import (
     new_message,
     send_message,
 )
-from fyuneru.task_queue.types import TaskActor, TaskHandler, TaskMessage
+from fyuneru.task_queue.types import ActorBinding, TaskActor, TaskHandler, TaskMessage
 from fyuneru.task_queue.worker import run_worker
 
 __all__ = [
+    "ActorBinding",
     "RegisteredActor",
     "TaskActor",
     "TaskHandler",

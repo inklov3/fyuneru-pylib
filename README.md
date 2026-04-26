@@ -226,21 +226,31 @@ collection = db["items"]
 ### 分布式任务
 
 ```python
-from typing import NamedTuple
+from dataclasses import dataclass
 
-from fyuneru.task_queue import actor, build_broker, calculate_namespace
 from fyuneru.result import unwrap
+from fyuneru.task_queue import actor, build_broker, calculate_namespace
 
-class Payload(NamedTuple):
+
+@dataclass(frozen=True)
+class Payload:
     item_id: str
     priority: int
+
 
 namespace = calculate_namespace(worker="worker-a", task="etl")
 broker = build_broker(redis_client, namespace=namespace, max_retries=0)
 
-@actor(broker, queue_name="default", name="process_item")
-def process_item(payload: dict):
-    print(payload["item_id"], payload["priority"])
+
+@actor(
+    broker,
+    queue_name="default",
+    name="process_item",
+    payload_type=Payload,
+)
+def process_item(payload: Payload):
+    print(payload.item_id, payload.priority)
+
 
 unwrap(process_item.send(Payload(item_id="item-1", priority=3)))
 unwrap(

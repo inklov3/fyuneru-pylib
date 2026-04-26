@@ -5,7 +5,11 @@ from typing import Any
 
 from fyuneru.result import ResultE, safe
 from fyuneru.task_queue.actor import build_xq_fields
-from fyuneru.task_queue.codec import decode_payload, encode_payload
+from fyuneru.task_queue.codec import (
+    decode_for_handler_payload,
+    decode_payload,
+    encode_payload,
+)
 
 
 @safe
@@ -67,16 +71,18 @@ def _process_message(
     normalized = broker._normalize_stream_fields(fields)
     actor_name = normalized["name"]
     payload_raw = normalized["payload"]
-    payload = decode_payload(payload_raw)
+    payload_envelope = decode_payload(payload_raw)
     attempt = int(normalized.get("attempt", "0"))
 
     actors = broker._actors.get(queue_name, {})
-    actor = actors.get(actor_name)
-    if actor is None:
+    binding = actors.get(actor_name)
+    if binding is None:
         raise KeyError(f"actor 未注册: {actor_name}")
 
+    handler_payload = decode_for_handler_payload(payload_envelope, binding.payload_type)
+
     try:
-        actor(payload)
+        binding.handler(handler_payload)
         broker.redis_client.xack(stream, broker.group_name, message_id)
     except Exception as error:
         _handle_failure(
@@ -85,7 +91,7 @@ def _process_message(
             queue_name=queue_name,
             message_id=message_id,
             actor_name=actor_name,
-            payload=payload,
+            payload=payload_envelope,
             attempt=attempt,
             error=error,
         )

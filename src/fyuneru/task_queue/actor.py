@@ -6,7 +6,7 @@ from traceback import format_exc
 from typing import Any
 
 from fyuneru.result import ResultE, safe
-from fyuneru.task_queue.codec import normalize_payload
+from fyuneru.task_queue.codec import normalize_payload_envelope
 from fyuneru.task_queue.types import TaskHandler
 
 
@@ -16,30 +16,33 @@ class RegisteredActor:
     name: str
     queue_name: str
     handler: TaskHandler
+    payload_type: type[Any] | None = None
 
-    def __call__(self, payload: dict[str, Any]) -> Any:
+    def __call__(self, payload: Any) -> Any:
         return self.handler(payload)
 
     @safe
     def send(self, payload: Any) -> str:
-        normalized_payload = normalize_payload(payload)
-        return self._sender(self.queue_name, self.name, normalized_payload, 0, None)
+        payload_envelope = normalize_payload_envelope(payload, self.payload_type)
+        return self._sender(self.queue_name, self.name, payload_envelope, 0, None)
 
 
 def actor(
-    register: Callable[[str, str, TaskHandler], None],
+    register: Callable[[str, str, TaskHandler, type[Any] | None], None],
     sender: Callable[[str, str, dict[str, Any], int, float | None], str],
     queue_name: str = "default",
     name: str | None = None,
+    payload_type: type[Any] | None = None,
 ) -> Callable[[TaskHandler], RegisteredActor]:
     def decorator(function: TaskHandler) -> RegisteredActor:
         actor_name = function.__name__ if name is None else name
-        register(queue_name, actor_name, function)
+        register(queue_name, actor_name, function, payload_type)
         return RegisteredActor(
             _sender=sender,
             name=actor_name,
             queue_name=queue_name,
             handler=function,
+            payload_type=payload_type,
         )
 
     return decorator

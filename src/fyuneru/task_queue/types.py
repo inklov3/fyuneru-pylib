@@ -9,7 +9,7 @@ from fyuneru.result import ResultE
 class TaskHandler(Protocol):
     __name__: str
 
-    def __call__(self, payload: dict[str, Any]) -> Any: ...
+    def __call__(self, payload: Any) -> Any: ...
 
 
 class TaskActor(Protocol):
@@ -17,6 +17,12 @@ class TaskActor(Protocol):
     queue_name: str
 
     def send(self, payload: Any) -> ResultE[str]: ...
+
+
+@dataclass(frozen=True)
+class ActorBinding:
+    handler: TaskHandler
+    payload_type: type[Any] | None = None
 
 
 @dataclass(frozen=True)

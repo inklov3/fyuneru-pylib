@@ -17,9 +17,9 @@ from fyuneru.task_queue.actor import (
 from fyuneru.task_queue.actor import (
     actor as register_actor,
 )
-from fyuneru.task_queue.codec import encode_payload, normalize_payload
+from fyuneru.task_queue.codec import encode_payload, normalize_payload_envelope
 from fyuneru.task_queue.lua_scripts import load_lua_scripts
-from fyuneru.task_queue.types import TaskHandler, TaskMessage
+from fyuneru.task_queue.types import ActorBinding, TaskHandler, TaskMessage
 from fyuneru.task_queue.worker import run_worker
 
 
@@ -31,7 +31,7 @@ class TaskQueueBroker:
     max_retries: int = 0
     claim_idle_ms: int | None = None
     xq_stream: str | None = None
-    _actors: dict[str, dict[str, TaskHandler]] = field(default_factory=dict)
+    _actors: dict[str, dict[str, ActorBinding]] = field(default_factory=dict)
     _group_ready_streams: set[str] = field(default_factory=set)
     _scripts: dict[str, Any] = field(default_factory=dict)
 
@@ -53,12 +53,14 @@ class TaskQueueBroker:
         self,
         queue_name: str = "default",
         name: str | None = None,
+        payload_type: type[Any] | None = None,
     ) -> Callable[[TaskHandler], RegisteredActor]:
         return register_actor(
             register=self._register_actor,
             sender=self._send_payload,
             queue_name=queue_name,
             name=name,
+            payload_type=payload_type,
         )
 
     def enqueue(self, message: TaskMessage) -> str:
@@ -88,9 +90,16 @@ class TaskQueueBroker:
         )
 
     def _register_actor(
-        self, queue_name: str, actor_name: str, handler: TaskHandler
+        self,
+        queue_name: str,
+        actor_name: str,
+        handler: TaskHandler,
+        payload_type: type[Any] | None,
     ) -> None:
-        self._actors.setdefault(queue_name, {})[actor_name] = handler
+        self._actors.setdefault(queue_name, {})[actor_name] = ActorBinding(
+            handler=handler,
+            payload_type=payload_type,
+        )
 
     def _send_payload(
         self,
@@ -303,7 +312,7 @@ def new_message(
     if attempt < 0:
         raise ValueError("attempt 不能小于 0")
 
-    normalized_payload = normalize_payload(payload)
+    normalized_payload = normalize_payload_envelope(payload, None)
     return TaskMessage(
         name=name,
         queue_name=queue_name,
@@ -331,8 +340,13 @@ def actor(
     broker: TaskQueueBroker,
     queue_name: str = "default",
     name: str | None = None,
+    payload_type: type[Any] | None = None,
 ) -> Callable[[TaskHandler], RegisteredActor]:
-    return broker.actor(queue_name=queue_name, name=name)
+    return broker.actor(
+        queue_name=queue_name,
+        name=name,
+        payload_type=payload_type,
+    )
 
 
 def _to_text(value: Any) -> str:

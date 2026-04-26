@@ -289,8 +289,10 @@ actor(
     broker: TaskQueueBroker,
     queue_name: str = "default",
     name: str | None = None,
+    payload_type: type[Any] | None = None,
 ) -> Callable[[TaskHandler], RegisteredActor]
 # Registers a handler and returns actor object with .send(payload).
+# If payload_type is dataclass, worker decodes payload to that type.
 
 new_message(
     name: str,

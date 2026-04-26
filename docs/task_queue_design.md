@@ -10,19 +10,21 @@
 - 保持 `fyuneru` 一致的函数式风格（`build_*`、显式错误）
 - 默认语义清晰：**至少一次消费**
 - 关键状态迁移用 Lua 保证原子性（重试/死信 + ACK）
+- payload 使用 dataclass envelope，兼顾传输可读性与程序类型一致性
 - 解析异常默认 strict：直接暴露错误，不静默吞掉
 
 ## 2. 快速使用
 
 ```python
-from typing import NamedTuple
+from dataclasses import dataclass
 
+from fyuneru.redis_toolkit import init_client_standalone
 from fyuneru.result import unwrap
 from fyuneru.task_queue import actor, build_broker, calculate_namespace
-from fyuneru.redis_toolkit import init_client_standalone
 
 
-class Payload(NamedTuple):
+@dataclass(frozen=True)
+class Payload:
     item_id: str
     priority: int
 
@@ -37,9 +39,14 @@ broker = build_broker(
 )
 
 
-@actor(broker, queue_name="default", name="process_item")
-def process_item(payload: dict):
-    print(payload["item_id"], payload["priority"])
+@actor(
+    broker,
+    queue_name="default",
+    name="process_item",
+    payload_type=Payload,
+)
+def process_item(payload: Payload):
+    print(payload.item_id, payload.priority)
 
 
 unwrap(process_item.send(Payload(item_id="item-1", priority=3)))
@@ -59,7 +66,7 @@ unwrap(
 
 - `calculate_namespace(worker, task) -> str`
 - `build_broker(...) -> TaskQueueBroker`
-- `actor(broker, queue_name="default", name=None)`
+- `actor(broker, queue_name="default", name=None, payload_type=None)`
 - `new_message(...) -> TaskMessage`
 - `send_message(broker, message) -> ResultE[str]`
 - `TaskQueueBroker.run_worker(...) -> ResultE[int]`
@@ -70,16 +77,45 @@ unwrap(
 
 - `id`: 业务消息 id（uuid）
 - `name`: actor 名称
-- `payload`: JSON 字符串
+- `payload`: JSON 字符串（envelope）
 - `attempt`: 当前尝试次数
 - `eta`: 预留字段（当前不做延迟调度）
 - `created_at`: 生产时间戳
 
-### NamedTuple 约定
+### payload envelope
 
-生产端若传入 `NamedTuple`，会走 `_asdict()` 语义进入 `payload`，保证字段名可读性。
+传输层统一为可读 JSON：
 
-## 5. 消费与失败语义
+```json
+{
+  "payload_type": "your_module.Payload",
+  "payload": {
+    "item_id": "item-1",
+    "priority": 3
+  }
+}
+```
+
+规则：
+
+- 注册 `payload_type=YourDataclass` 时：
+  - 生产端必须发送该 dataclass 实例
+  - 消费端按该 dataclass 还原
+- 未注册 `payload_type` 时：
+  - 仅允许 `dict` payload
+  - envelope 的 `payload_type` 固定为 `"dict"`
+
+## 5. fail-fast 约束（无版本兼容）
+
+当前策略是 fail-fast，不做版本降级兼容：
+
+- `payload_type` 不匹配：立即报错
+- payload 字段与 dataclass 不匹配：立即报错
+- 未注册类型但收到非 `dict` envelope：立即报错
+
+这确保问题尽早暴露，不隐藏协议漂移。
+
+## 6. 消费与失败语义
 
 - 消费：`XREADGROUP`
 - 成功：执行 handler 后 `XACK`
@@ -94,7 +130,7 @@ unwrap(
 
 XQ 默认流名：`<namespace>:xq`。
 
-## 6. 原子性策略（最小 Lua）
+## 7. 原子性策略（最小 Lua）
 
 为避免边界不一致（如“已 ACK 但未重投/未入 XQ”），关键迁移使用 Lua 原子脚本：
 
@@ -108,13 +144,13 @@ XQ 默认流名：`<namespace>:xq`。
 - 覆盖最容易造成真实丢消息的关键边界
 - 保持整体实现可维护，不把全链路都塞进单个巨型脚本
 
-## 7. 一致性与业务幂等
+## 8. 一致性与业务幂等
 
 队列层保证的是**至少一次**，不是“恰好一次”。
 
 因此业务 handler 仍需自行保证幂等（例如基于 `task_id` 做去重），以避免重复执行副作用。
 
-## 8. strict 模式约定
+## 9. strict 模式约定
 
 当前按 strict 约定执行：
 
@@ -123,7 +159,7 @@ XQ 默认流名：`<namespace>:xq`。
 
 这有助于尽早暴露框架或上游数据问题。
 
-## 9. 与 Dramatiq 思路的关系
+## 10. 与 Dramatiq 思路的关系
 
 借鉴点：
 
