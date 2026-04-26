@@ -11,7 +11,7 @@ uv add fyuneru@git+https://github.com/inklov3/fyuneru-pylib.git
 uv add "fyuneru[redis] @ git+https://github.com/inklov3/fyuneru-pylib.git"
 uv add "fyuneru[s3] @ git+https://github.com/inklov3/fyuneru-pylib.git"
 uv add "fyuneru[mongo] @ git+https://github.com/inklov3/fyuneru-pylib.git"
-uv add "fyuneru[pipeline] @ git+https://github.com/inklov3/fyuneru-pylib.git"   # Redis + Dramatiq
+uv add "fyuneru[pipeline] @ git+https://github.com/inklov3/fyuneru-pylib.git"   # Redis Streams task queue
 uv add "fyuneru[media] @ git+https://github.com/inklov3/fyuneru-pylib.git"      # av + Pillow
 uv add "fyuneru[gemini] @ git+https://github.com/inklov3/fyuneru-pylib.git"     # Google Gemini
 ```
@@ -259,12 +259,13 @@ init_database_from_config(config: dict) -> Callable[[], Database]
 # Returns Callable[[], Database].
 ```
 
-### dramatiq_toolkit (`fyuneru.dramatiq_toolkit`)
+### task_queue (`fyuneru.task_queue`)
 
 Requires: `fyuneru[pipeline]`
 
 ```python
-from fyuneru.dramatiq_toolkit import (
+from fyuneru.task_queue import (
+    actor,
     build_broker,
     calculate_namespace,
     new_message,
@@ -274,19 +275,43 @@ from fyuneru.dramatiq_toolkit import (
 calculate_namespace(worker: str, task: str) -> str
 # Returns "{worker}:{{{task}}}"
 
-build_broker(redis_client: Redis | RedisCluster, namespace: str) -> Broker
-# Creates a Dramatiq RedisBroker.
+build_broker(
+    redis_client: Redis | RedisCluster,
+    namespace: str,
+    group_name: str = "default",
+    max_retries: int = 0,
+    claim_idle_ms: int | None = None,
+    xq_stream: str | None = None,
+) -> TaskQueueBroker
+# Builds Redis Streams based task broker.
+
+actor(
+    broker: TaskQueueBroker,
+    queue_name: str = "default",
+    name: str | None = None,
+) -> Callable[[TaskHandler], RegisteredActor]
+# Registers a handler and returns actor object with .send(payload).
 
 new_message(
-    actor_name: str,
+    name: str,
     queue_name: str,
-    args: tuple = (),
-    kwargs: dict[str, Any] | None = None,
-    options: dict | None = None,
-) -> Message
+    payload: Any,
+    attempt: int = 0,
+    eta: float | None = None,
+) -> TaskMessage
 
-send_message(broker: Broker, message: Message) -> Message
-# Enqueues message on the broker.
+send_message(broker: TaskQueueBroker, message: TaskMessage) -> ResultE[str]
+# Enqueues message into stream and returns message id.
+
+TaskQueueBroker.run_worker(
+    queue_name: str = "default",
+    consumer_name: str = "worker-1",
+    block_ms: int = 1000,
+    max_messages: int | None = None,
+    stop_when_idle: bool = False,
+) -> ResultE[int]
+# Consumes and executes tasks; acks on success.
+# On failure, retries up to max_retries then writes to XQ stream.
 ```
 
 ### gemini_toolkit (`fyuneru.gemini_toolkit`)
@@ -326,6 +351,8 @@ response = client.models.generate_content(
 )
 result = MyModel.model_validate_json(response.text)
 ```
+
+Task queue design doc: `docs/task_queue_design.md`
 
 ## Config YAML Format
 
