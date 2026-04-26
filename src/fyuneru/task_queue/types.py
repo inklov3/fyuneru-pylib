@@ -22,7 +22,7 @@ class TaskActor(Protocol):
 @dataclass(frozen=True)
 class ActorBinding:
     handler: TaskHandler
-    payload_type: type[Any] | None = None
+    payload_type: type[Any]
 
 
 @dataclass(frozen=True)

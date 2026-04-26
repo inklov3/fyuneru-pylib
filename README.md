@@ -246,7 +246,6 @@ broker = build_broker(redis_client, namespace=namespace, max_retries=0)
     broker,
     queue_name="default",
     name="process_item",
-    payload_type=Payload,
 )
 def process_item(payload: Payload):
     print(payload.item_id, payload.priority)

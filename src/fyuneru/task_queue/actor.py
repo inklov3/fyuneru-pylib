@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import inspect
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, is_dataclass
 from traceback import format_exc
-from typing import Any
+from typing import Any, get_type_hints
 
 from fyuneru.result import ResultE, safe
 from fyuneru.task_queue.codec import normalize_payload_envelope
@@ -16,7 +17,7 @@ class RegisteredActor:
     name: str
     queue_name: str
     handler: TaskHandler
-    payload_type: type[Any] | None = None
+    payload_type: type[Any]
 
     def __call__(self, payload: Any) -> Any:
         return self.handler(payload)
@@ -28,14 +29,14 @@ class RegisteredActor:
 
 
 def actor(
-    register: Callable[[str, str, TaskHandler, type[Any] | None], None],
+    register: Callable[[str, str, TaskHandler, type[Any]], None],
     sender: Callable[[str, str, dict[str, Any], int, float | None], str],
     queue_name: str = "default",
     name: str | None = None,
-    payload_type: type[Any] | None = None,
 ) -> Callable[[TaskHandler], RegisteredActor]:
     def decorator(function: TaskHandler) -> RegisteredActor:
         actor_name = function.__name__ if name is None else name
+        payload_type = resolve_payload_type(function)
         register(queue_name, actor_name, function, payload_type)
         return RegisteredActor(
             _sender=sender,
@@ -46,6 +47,35 @@ def actor(
         )
 
     return decorator
+
+
+def resolve_payload_type(function: TaskHandler) -> type[Any]:
+    signature = inspect.signature(function)
+    positional_parameters = [
+        parameter
+        for parameter in signature.parameters.values()
+        if parameter.kind
+        in (
+            inspect.Parameter.POSITIONAL_ONLY,
+            inspect.Parameter.POSITIONAL_OR_KEYWORD,
+        )
+    ]
+    if len(positional_parameters) != 1:
+        raise TypeError("actor 函数必须且仅能声明一个 payload 参数")
+
+    parameter = positional_parameters[0]
+    if parameter.annotation is inspect.Parameter.empty:
+        raise TypeError("payload 参数必须声明 dataclass 类型注解")
+
+    type_hints = get_type_hints(function)
+    payload_type = type_hints.get(parameter.name)
+    if payload_type is None:
+        raise TypeError("payload 参数必须声明 dataclass 类型注解")
+    if not isinstance(payload_type, type):
+        raise TypeError("payload 参数类型必须是 dataclass")
+    if not is_dataclass(payload_type):
+        raise TypeError("payload 参数类型必须是 dataclass")
+    return payload_type
 
 
 def build_xq_fields(

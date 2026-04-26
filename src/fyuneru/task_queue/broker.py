@@ -53,14 +53,12 @@ class TaskQueueBroker:
         self,
         queue_name: str = "default",
         name: str | None = None,
-        payload_type: type[Any] | None = None,
     ) -> Callable[[TaskHandler], RegisteredActor]:
         return register_actor(
             register=self._register_actor,
             sender=self._send_payload,
             queue_name=queue_name,
             name=name,
-            payload_type=payload_type,
         )
 
     def enqueue(self, message: TaskMessage) -> str:
@@ -90,7 +88,7 @@ class TaskQueueBroker:
         queue_name: str,
         actor_name: str,
         handler: TaskHandler,
-        payload_type: type[Any] | None,
+        payload_type: type[Any],
     ) -> None:
         self._actors.setdefault(queue_name, {})[actor_name] = ActorBinding(
             handler=handler,
@@ -308,7 +306,7 @@ def new_message(
     if attempt < 0:
         raise ValueError("attempt 不能小于 0")
 
-    normalized_payload = normalize_payload_envelope(payload, None)
+    normalized_payload = normalize_payload_envelope(payload, type(payload))
     return TaskMessage(
         name=name,
         queue_name=queue_name,
@@ -336,12 +334,10 @@ def actor(
     broker: TaskQueueBroker,
     queue_name: str = "default",
     name: str | None = None,
-    payload_type: type[Any] | None = None,
 ) -> Callable[[TaskHandler], RegisteredActor]:
     return broker.actor(
         queue_name=queue_name,
         name=name,
-        payload_type=payload_type,
     )
 
 

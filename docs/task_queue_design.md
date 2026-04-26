@@ -43,7 +43,6 @@ broker = build_broker(
     broker,
     queue_name="default",
     name="process_item",
-    payload_type=Payload,
 )
 def process_item(payload: Payload):
     print(payload.item_id, payload.priority)
@@ -65,7 +64,7 @@ unwrap(
 
 - `calculate_namespace(worker, task) -> str`
 - `build_broker(...) -> TaskQueueBroker`
-- `actor(broker, queue_name="default", name=None, payload_type=None)`
+- `actor(broker, queue_name="default", name=None)`
 - `new_message(...) -> TaskMessage`
 - `send_message(broker, message) -> ResultE[str]`
 - `TaskQueueBroker.run_worker(...) -> ResultE[int]`
@@ -97,20 +96,18 @@ unwrap(
 
 规则：
 
-- 注册 `payload_type=YourDataclass` 时：
-  - 生产端必须发送该 dataclass 实例
-  - 消费端按该 dataclass 还原
-- 未注册 `payload_type` 时：
-  - 仅允许 `dict` payload
-  - envelope 的 `payload_type` 固定为 `"dict"`
+- actor 函数首个且唯一 payload 参数必须声明为 dataclass 类型
+- 生产端必须发送该 dataclass 实例
+- 消费端按该 dataclass 还原
+- `new_message` 同样仅允许 dataclass payload
 
 ## 5. fail-fast 约束（无版本兼容）
 
 当前策略是 fail-fast，不做版本降级兼容：
 
-- `payload_type` 不匹配：立即报错
+- envelope `payload_type` 与函数注解 dataclass 不匹配：立即报错
 - payload 字段与 dataclass 不匹配：立即报错
-- 未注册类型但收到非 `dict` envelope：立即报错
+- 无注解、非 dataclass 注解、参数数量不符合约束：注册阶段立即报错
 
 这确保问题尽早暴露，不隐藏协议漂移。
 

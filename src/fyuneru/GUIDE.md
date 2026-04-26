@@ -289,10 +289,9 @@ actor(
     broker: TaskQueueBroker,
     queue_name: str = "default",
     name: str | None = None,
-    payload_type: type[Any] | None = None,
 ) -> Callable[[TaskHandler], RegisteredActor]
 # Registers a handler and returns actor object with .send(payload).
-# If payload_type is dataclass, worker decodes payload to that type.
+# payload type is inferred from handler signature and must be dataclass.
 
 new_message(
     name: str,
@@ -301,13 +300,14 @@ new_message(
     attempt: int = 0,
     eta: float | None = None,
 ) -> TaskMessage
+# payload must be dataclass instance.
 
 send_message(broker: TaskQueueBroker, message: TaskMessage) -> ResultE[str]
 # Enqueues message into stream and returns message id.
 
 TaskMessage.payload uses envelope schema:
 # {
-#   "payload_type": "your_module.YourDataclass" | "dict",
+#   "payload_type": "your_module.YourDataclass",
 #   "payload": { ... }
 # }
 # Fail-fast: payload_type mismatch or payload schema mismatch raises error.
