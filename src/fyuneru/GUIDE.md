@@ -305,6 +305,13 @@ new_message(
 send_message(broker: TaskQueueBroker, message: TaskMessage) -> ResultE[str]
 # Enqueues message into stream and returns message id.
 
+TaskMessage.payload uses envelope schema:
+# {
+#   "payload_type": "your_module.YourDataclass" | "dict",
+#   "payload": { ... }
+# }
+# Fail-fast: payload_type mismatch or payload schema mismatch raises error.
+
 TaskQueueBroker.run_worker(
     queue_name: str = "default",
     consumer_name: str = "worker-1",
