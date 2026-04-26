@@ -77,16 +77,12 @@ class TaskQueueBroker:
         queue_name: str = "default",
         consumer_name: str = "worker-1",
         block_ms: int = 1000,
-        max_messages: int | None = None,
-        stop_when_idle: bool = False,
     ) -> ResultE[int]:
         return run_worker(
             broker=self,
             queue_name=queue_name,
             consumer_name=consumer_name,
             block_ms=block_ms,
-            max_messages=max_messages,
-            stop_when_idle=stop_when_idle,
         )
 
     def _register_actor(

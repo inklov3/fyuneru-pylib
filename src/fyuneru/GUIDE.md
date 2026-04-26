@@ -316,8 +316,6 @@ TaskQueueBroker.run_worker(
     queue_name: str = "default",
     consumer_name: str = "worker-1",
     block_ms: int = 1000,
-    max_messages: int | None = None,
-    stop_when_idle: bool = False,
 ) -> ResultE[int]
 # Consumes and executes tasks; acks on success.
 # On failure, retries up to max_retries then writes to XQ stream.

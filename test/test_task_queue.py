@@ -5,6 +5,7 @@ from typing import Any
 
 from fyuneru.result import Failure, Success, is_failure, is_success
 from fyuneru.task_queue import actor, build_broker, calculate_namespace, new_message
+from fyuneru.task_queue.worker import run_worker_once_for_test
 
 
 class FakeScript:
@@ -185,7 +186,7 @@ def test_task_queue_send_and_consume_success_dataclass() -> None:
     send_result = process_item.send(Payload(item_id="item-1", priority=3))
 
     assert is_success(send_result)
-    worker_result = broker.run_worker(queue_name="default", stop_when_idle=True)
+    worker_result = run_worker_once_for_test(broker, queue_name="default")
     assert is_success(worker_result)
     assert isinstance(worker_result, Success)
     assert worker_result.value == 1
@@ -210,7 +211,7 @@ def test_task_queue_failure_goes_to_xq_when_no_retry() -> None:
     send_result = broker.enqueue(message)
     assert isinstance(send_result, str)
 
-    worker_result = broker.run_worker(queue_name="default", stop_when_idle=True)
+    worker_result = run_worker_once_for_test(broker, queue_name="default")
     assert is_success(worker_result)
 
     xq_stream = f"{namespace}:xq"
@@ -233,7 +234,7 @@ def test_task_queue_retry_uses_atomic_script() -> None:
         raise RuntimeError("retry")
 
     broker.enqueue(new_message(name="fail_once", queue_name="default", payload={"k": 1}))
-    result = broker.run_worker(queue_name="default", stop_when_idle=True, max_messages=1)
+    result = run_worker_once_for_test(broker, queue_name="default")
     assert is_success(result)
 
     stream = f"{namespace}:default"
@@ -256,7 +257,7 @@ def test_task_queue_lua_fallback_without_register_script() -> None:
         raise RuntimeError("boom")
 
     broker.enqueue(new_message(name="always_fail", queue_name="default", payload={"k": 1}))
-    result = broker.run_worker(queue_name="default", stop_when_idle=True)
+    result = run_worker_once_for_test(broker, queue_name="default")
     assert is_success(result)
 
     xq_stream = f"{namespace}:xq"
@@ -337,7 +338,7 @@ def test_worker_failfast_on_payload_type_mismatch() -> None:
         },
     )
 
-    result = broker.run_worker(queue_name="default", stop_when_idle=True)
+    result = run_worker_once_for_test(broker, queue_name="default")
     assert is_failure(result)
     assert isinstance(result, Failure)
     assert "payload_type 不匹配" in str(result.error)
@@ -369,7 +370,7 @@ def test_run_worker_returns_failure_for_invalid_message_payload() -> None:
         },
     )
 
-    result = broker.run_worker(queue_name="default", stop_when_idle=True)
+    result = run_worker_once_for_test(broker, queue_name="default")
     assert is_failure(result)
     assert isinstance(result, Failure)
     assert "payload 必须是对象映射" in str(result.error)

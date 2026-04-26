@@ -54,8 +54,7 @@ unwrap(
     broker.run_worker(
         queue_name="default",
         consumer_name="worker-1",
-        max_messages=1,
-        stop_when_idle=True,
+        block_ms=1000,
     )
 )
 ```

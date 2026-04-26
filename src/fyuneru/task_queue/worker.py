@@ -18,32 +18,19 @@ def run_worker(
     queue_name: str = "default",
     consumer_name: str = "worker-1",
     block_ms: int = 1000,
-    max_messages: int | None = None,
-    stop_when_idle: bool = False,
 ) -> int:
     processed = 0
     stream = broker._stream_name(queue_name)
     broker._ensure_group(stream)
 
     while True:
-        if max_messages is not None and processed >= max_messages:
-            break
-
-        claimed = broker._claim_entries(stream, consumer_name)
-        entries = claimed
+        entries = _read_entries(
+            broker=broker,
+            stream=stream,
+            consumer_name=consumer_name,
+            block_ms=block_ms,
+        )
         if not entries:
-            response = broker.redis_client.xreadgroup(
-                groupname=broker.group_name,
-                consumername=consumer_name,
-                streams={stream: ">"},
-                count=1,
-                block=block_ms,
-            )
-            entries = broker._flatten_entries(response)
-
-        if not entries:
-            if stop_when_idle:
-                break
             continue
 
         for message_id, fields in entries:
@@ -55,10 +42,60 @@ def run_worker(
                 fields=fields,
             )
             processed += 1
-            if max_messages is not None and processed >= max_messages:
-                break
 
     return processed
+
+
+@safe
+def run_worker_once_for_test(
+    broker: Any,
+    queue_name: str = "default",
+    consumer_name: str = "worker-1",
+    block_ms: int = 1,
+) -> int:
+    stream = broker._stream_name(queue_name)
+    broker._ensure_group(stream)
+
+    entries = _read_entries(
+        broker=broker,
+        stream=stream,
+        consumer_name=consumer_name,
+        block_ms=block_ms,
+    )
+    if not entries:
+        return 0
+
+    processed = 0
+    for message_id, fields in entries:
+        _process_message(
+            broker=broker,
+            stream=stream,
+            queue_name=queue_name,
+            message_id=message_id,
+            fields=fields,
+        )
+        processed += 1
+    return processed
+
+
+def _read_entries(
+    broker: Any,
+    stream: str,
+    consumer_name: str,
+    block_ms: int,
+) -> list[tuple[str, dict[Any, Any]]]:
+    claimed = broker._claim_entries(stream, consumer_name)
+    if claimed:
+        return claimed
+
+    response = broker.redis_client.xreadgroup(
+        groupname=broker.group_name,
+        consumername=consumer_name,
+        streams={stream: ">"},
+        count=1,
+        block=block_ms,
+    )
+    return broker._flatten_entries(response)
 
 
 def _process_message(
