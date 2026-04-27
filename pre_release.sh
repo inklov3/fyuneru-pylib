@@ -8,3 +8,4 @@ uv run pyrefly check src/
 uv run python test/test_s3_source.py
 uv run python test/test_logger.py
 uv run python test/test_config.py
+uv run python test/test_task_queue.py

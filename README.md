@@ -4,7 +4,7 @@
 
 ## 项目定位
 
-`fyuneru` 用来把 Redis、S3、MongoDB、Dramatiq、Gemini 等基础设施访问整理成更小、更稳定的组合单元。
+`fyuneru` 用来把 Redis、S3、MongoDB、Redis Streams 任务队列、Gemini 等基础设施访问整理成更小、更稳定的组合单元。
 
 - 推荐从子模块导入，例如 `from fyuneru.redis_toolkit import bind_redis_set_writer`
 - 默认安装只包含核心依赖；使用 Redis、MongoDB、Gemini 等能力时，需要安装对应 extra
@@ -37,7 +37,7 @@ uv add fyuneru@git+https://github.com/inklov3/fyuneru-pylib.git
 | `fyuneru[s3]` | S3 client、对象读写删除列举、多源 `blob://` 读取 | `s3_toolkit`、`s3_source`、`s3_toolkit.init_client_from_config`、`s3_toolkit.init_workspace_from_config` |
 | `fyuneru[mongo]` | MongoClient 惰性初始化与按配置获取 `Database` | `mongo_toolkit`、`mongo_toolkit.init_client_from_config`、`mongo_toolkit.init_database_from_config` |
 | `fyuneru[gemini]` | Google Gemini client 与结构化 JSON 输出配置 | `gemini_toolkit`、`gemini_toolkit.init_client_from_config` |
-| `fyuneru[pipeline]` | Redis + Dramatiq 的组合依赖 | `dramatiq_toolkit` 及 `redis` 相关模块 |
+| `fyuneru[pipeline]` | Redis Streams 任务队列能力 | `task_queue` 及 `redis` 相关模块 |
 | `fyuneru[media]` | 安装 `av` / `Pillow` 依赖，便于上层媒体处理代码复用 | 当前仓库未提供独立 `media` toolkit |
 
 例如：
@@ -46,7 +46,7 @@ uv add fyuneru@git+https://github.com/inklov3/fyuneru-pylib.git
 uv add "fyuneru[redis,s3] @ git+https://github.com/inklov3/fyuneru-pylib.git"
 ```
 
-任何依赖可选第三方包的模块都应先安装对应 extra，例如 `fyuneru.redis_toolkit`、`fyuneru.s3_toolkit`、`fyuneru.mongo_toolkit`、`fyuneru.dramatiq_toolkit`、`fyuneru.gemini_toolkit`。
+任何依赖可选第三方包的模块都应先安装对应 extra，例如 `fyuneru.redis_toolkit`、`fyuneru.s3_toolkit`、`fyuneru.mongo_toolkit`、`fyuneru.task_queue`、`fyuneru.gemini_toolkit`。
 
 ## 模块概览
 
@@ -60,7 +60,7 @@ uv add "fyuneru[redis,s3] @ git+https://github.com/inklov3/fyuneru-pylib.git"
 | `fyuneru.s3_toolkit` | S3 client 初始化与对象读写删除列举 | `s3` |
 | `fyuneru.s3_source` | 通过 `blob://桶id/key` 协议透明读取多个 S3 源 | `s3` |
 | `fyuneru.mongo_toolkit` | MongoClient 惰性初始化 | `mongo` |
-| `fyuneru.dramatiq_toolkit` | Dramatiq broker 初始化、消息构造与投递 | `pipeline` |
+| `fyuneru.task_queue` | Redis Streams broker、Actor 注册、消息投递与 Worker 消费 | `pipeline` |
 | `fyuneru.gemini_toolkit` | Gemini client 初始化与结构化输出配置 | `gemini` |
 
 ## 快速上手
@@ -226,21 +226,40 @@ collection = db["items"]
 ### 分布式任务
 
 ```python
-from fyuneru.dramatiq_toolkit import (
-    build_broker,
-    calculate_namespace,
-    new_message,
-    send_message,
-)
+from dataclasses import dataclass
+
+from fyuneru.result import unwrap
+from fyuneru.task_queue import actor, build_broker, calculate_namespace
+
+
+@dataclass(frozen=True)
+class Payload:
+    item_id: str
+    priority: int
+
 
 namespace = calculate_namespace(worker="worker-a", task="etl")
 broker = build_broker(redis_client, namespace=namespace)
-message = new_message(
-    actor_name="process_item",
+
+
+@actor(
+    broker,
     queue_name="default",
-    args=("payload",),
+    name="process_item",
+    max_retries=0,
 )
-send_message(broker, message)
+def process_item(payload: Payload):
+    print(payload.item_id, payload.priority)
+
+
+unwrap(process_item.send(Payload(item_id="item-1", priority=3)))
+unwrap(
+    broker.run_worker(
+        queue_name="default",
+        consumer_name="worker-1",
+        block_ms=1000,
+    )
+)
 ```
 
 ### Gemini 结构化输出
@@ -317,6 +336,7 @@ uv run python test/test_config.py
 
 - 配置示例：[`example.yml`](example.yml)
 - 协议文档：[`docs/s3_source_protocol.md`](docs/s3_source_protocol.md)
+- 任务队列设计：[`docs/task_queue_design.md`](docs/task_queue_design.md)
 - 变更记录：[`CHANGELOG.md`](CHANGELOG.md)
 
 ## License
