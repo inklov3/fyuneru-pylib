@@ -291,7 +291,7 @@ actor(
     max_retries: int = 0,
 ) -> Callable[[TaskHandler], RegisteredActor]
 # Registers a handler and returns actor object with .send(payload).
-# payload type is inferred from handler signature and must be dataclass.
+# Handler must declare exactly one positional payload parameter annotated as dataclass.
 
 new_message(
     name: str,
@@ -300,7 +300,7 @@ new_message(
     attempt: int = 0,
     eta: float | None = None,
 ) -> TaskMessage
-# payload must be dataclass instance.
+# payload must be a dataclass instance and attempt must be >= 0.
 
 send_message(broker: TaskQueueBroker, message: TaskMessage) -> ResultE[str]
 # Enqueues message into stream and returns message id.
@@ -310,7 +310,8 @@ TaskMessage.payload uses envelope schema:
 #   "payload_type": "your_module.YourDataclass",
 #   "payload": { ... }
 # }
-# Fail-fast: payload_type mismatch or payload schema mismatch raises error.
+# Fail-fast: producer payload type mismatch, envelope payload_type mismatch,
+# or dataclass field mismatch all raise errors.
 
 TaskQueueBroker.run_worker(
     queue_name: str = "default",
@@ -319,6 +320,8 @@ TaskQueueBroker.run_worker(
 ) -> ResultE[int]
 # Consumes and executes tasks; acks on success.
 # On failure, retries up to actor.max_retries then writes to XQ stream.
+# If claim_idle_ms is set, worker first uses XAUTOCLAIM to reclaim stale pending entries.
+# xq_stream defaults to "<namespace>:xq" and can be overridden in build_broker.
 ```
 
 ### gemini_toolkit (`fyuneru.gemini_toolkit`)

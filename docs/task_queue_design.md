@@ -63,11 +63,11 @@ unwrap(
 核心入口：
 
 - `calculate_namespace(worker, task) -> str`
-- `build_broker(...) -> TaskQueueBroker`
-- `actor(broker, queue_name="default", name=None)`
-- `new_message(...) -> TaskMessage`
+- `build_broker(redis_client, namespace, group_name="default", claim_idle_ms=None, xq_stream=None) -> TaskQueueBroker`
+- `actor(broker, queue_name="default", name=None, max_retries=0)`
+- `new_message(name, queue_name, payload, attempt=0, eta=None) -> TaskMessage`
 - `send_message(broker, message) -> ResultE[str]`
-- `TaskQueueBroker.run_worker(...) -> ResultE[int]`
+- `TaskQueueBroker.run_worker(queue_name="default", consumer_name="worker-1", block_ms=1000) -> ResultE[int]`
 
 ## 4. 消息模型
 
@@ -105,9 +105,10 @@ unwrap(
 
 当前策略是 fail-fast，不做版本降级兼容：
 
-- envelope `payload_type` 与函数注解 dataclass 不匹配：立即报错
-- payload 字段与 dataclass 不匹配：立即报错
-- 无注解、非 dataclass 注解、参数数量不符合约束：注册阶段立即报错
+- 生产阶段：发送 payload 必须与 actor 注解 dataclass 类型一致，不一致立即报错
+- 消费阶段：envelope `payload_type` 与函数注解 dataclass 不匹配，立即报错
+- 消费阶段：payload 字段与 dataclass 不匹配，立即报错
+- 注册阶段：无注解、非 dataclass 注解、参数数量不符合约束，立即报错
 
 这确保问题尽早暴露，不隐藏协议漂移。
 
@@ -122,9 +123,10 @@ unwrap(
 默认配置：
 
 - `actor.max_retries=0`：失败直接进 XQ
-- `claim_idle_ms=None`：不做超时消息接管
+- `claim_idle_ms=None`：不做超时消息接管；设置后会先执行 `XAUTOCLAIM` 接管超过空闲阈值的 pending 消息
+- `xq_stream=None`：使用默认死信流名
 
-XQ 默认流名：`<namespace>:xq`。
+XQ 默认流名：`<namespace>:xq`，也可通过 `build_broker(..., xq_stream="...")` 覆盖。
 
 ## 7. 原子性策略（最小 Lua）
 

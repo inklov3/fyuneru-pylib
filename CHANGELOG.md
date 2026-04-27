@@ -1,5 +1,27 @@
 # Changelog
 
+## 2026-04-27
+
+### 新增
+
+- **`task_queue`** — 新增 Redis Streams 任务队列模块，提供 `build_broker`、`actor`、`new_message`、`send_message`、`run_worker` 等核心能力
+- **`task_queue`** — payload 统一为 dataclass envelope（`payload_type` + `payload`），默认 fail-fast 校验
+- **`task_queue`** — 新增最小 Lua 原子脚本（重试/死信 + ACK）以降低边界状态不一致风险
+
+### 重构
+
+- **`task_queue`** — `max_retries` 下沉到 actor 级配置
+- **`task_queue`** — actor payload 类型改为基于函数签名强约束推断（必须且仅一个 dataclass 参数）
+- **`task_queue`** — worker 入口参数收敛，统一消费调用方式
+
+### 测试
+
+- **`test/test_task_queue.py`** — 新增 task_queue 端到端与失败路径测试
+
+### 文档
+
+- **`README.md`** / **`src/fyuneru/GUIDE.md`** / **`docs/task_queue_design.md`** — 补充 task_queue 用法、payload envelope、fail-fast 与重试/死信语义
+
 ## 2026-04-09
 
 ### 重构（破坏性）

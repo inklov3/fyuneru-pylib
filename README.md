@@ -321,11 +321,13 @@ uv sync --group dev --extra redis --extra s3 --extra mongo --extra gemini --extr
 
 ```bash
 uv sync --group dev --extra redis --extra s3 --extra mongo --extra gemini --extra pipeline --extra media
+uv run pyclean src/
 uv run ruff check src/
 uv run pyrefly check src/
 uv run python test/test_s3_source.py
 uv run python test/test_logger.py
 uv run python test/test_config.py
+uv run python test/test_task_queue.py
 ```
 
 当前仓库测试通过脚本执行，不是 pytest 工作流。

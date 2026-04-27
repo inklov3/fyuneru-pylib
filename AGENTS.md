@@ -1,164 +1,89 @@
 # AGENTS.md — fyuneru-pylib
 
-Python utility library wrapping common infrastructure components (Redis, S3, MongoDB,
-Dramatiq, Google Gemini) with unified, composable functional interfaces.
-Local `Success`/`Failure` result type for safe error handling and lazy initialization.
+## 这个仓库最容易踩坑的点
 
-## Build & Test Commands
+- 使用 **uv**（不是 pip/poetry）。
+- 这是 `src/` 布局的库项目（`src/fyuneru`），不是可运行应用。
+- 顶层 `src/fyuneru/__init__.py` 为空；不要假设顶层 re-export，按子模块导入。
+- 测试不是 pytest：都是 `test/*.py` 脚本（`assert` + `__main__`）。
+
+## 权威命令（以脚本/配置为准）
+
+### 安装
 
 ```bash
-# Install (development, all optional deps)
-uv sync --group dev --extra redis --extra s3 --extra pipeline --extra media --extra gemini --extra mongo
-
-# Install (development, minimal)
+# 开发最小安装
 uv sync --group dev
 
-# Lint (import sorting only)
+# 开发 + 全部可选能力
+uv sync --group dev --extra redis --extra s3 --extra mongo --extra gemini --extra pipeline --extra media
+```
+
+### 代码改动后最小校验顺序
+
+```bash
 uv run ruff check src/
-
-# Auto-format
 uv run ruff format src/
-
-# Type check
 uv run pyrefly check src/
+```
 
-# Full pre-release pipeline (lint + typecheck + tests)
+### 完整发布前校验（单一真相）
+
+```bash
 ./pre_release.sh
 ```
 
-### Running Tests
+`pre_release.sh` 当前顺序是：
+1) `uv sync ...all extras`
+2) `uv run pyclean src/`
+3) `uv run ruff check src/`
+4) `uv run pyrefly check src/`
+5) `uv run python test/test_s3_source.py`
+6) `uv run python test/test_logger.py`
+7) `uv run python test/test_config.py`
+8) `uv run python test/test_task_queue.py`
 
-No test framework — tests are plain Python scripts with `assert` statements.
+## 测试约定
 
 ```bash
-# Run a single test
+# 单测脚本
 uv run python test/test_logger.py
 uv run python test/test_s3_source.py
 uv run python test/test_config.py
+uv run python test/test_task_queue.py
 
-# Run all tests
-uv run python test/test_s3_source.py && uv run python test/test_logger.py && uv run python test/test_config.py
+# 全量脚本测试
+uv run python test/test_s3_source.py && uv run python test/test_logger.py && uv run python test/test_config.py && uv run python test/test_task_queue.py
 ```
 
-### After Making Changes — Always Run
+- `task_queue.run_worker` 是无限循环消费；写测试/本地验证时避免直接调用它导致阻塞。
+- 现有测试都走纯逻辑路径，不依赖外部 Redis/S3/Mongo 服务（`test_task_queue.py` 使用 fake client）。
 
-```bash
-uv run ruff check src/
-uv run ruff format src/
-uv run pyrefly check src/
-```
+## 结构与边界（只保留会影响实现决策的事实）
 
-## Tech Stack
+- 核心模式：
+  - `init_*`：返回惰性 `Callable[[], Client]`
+  - `bind_*`：绑定 client + 资源名，返回单一操作闭包
+  - `build_*`：构建组合对象（如 broker）
+- 统一错误模型：`src/fyuneru/result.py`
+  - `Success` / `Failure` / `@safe` / `unwrap`
+- 配置读取：`src/fyuneru/config.py`
+  - `read_config_from_paths` 按顺序合并多个 YAML
+  - merge 规则：`dict` 递归合并、标量覆盖、`list` 直接追加
+  - `read_config_from_env` 读取 `FYUNERU_CONFIG_PATHS`（冒号分隔）
+- `task_queue`：`src/fyuneru/task_queue/`
+  - payload 强约束为 dataclass envelope（fail-fast）
+  - 重试/死信 + ACK 关键迁移优先走 Lua 脚本
 
-- Python >= 3.11, `src/` layout (PEP 517/621)
-- Build backend: Hatchling
-- Package manager: **uv** (not pip, not poetry)
-- Linter/formatter: ruff
-- Type checker: pyrefly
-- Core deps: loguru, pyyaml, tqdm
-- **Local result type**: `src/fyuneru/result.py` 实现 `Success` / `Failure` / `@safe` (非外部 returns 库)
-- Optional deps grouped in `pyproject.toml`: redis, s3, pipeline, media, gemini, mongo
+## 可选依赖边界（不要猜依赖存在）
 
-## Architecture
+- `redis_toolkit` 需要 `fyuneru[redis]`
+- `s3_toolkit` / `s3_source` 需要 `fyuneru[s3]`
+- `mongo_toolkit` 需要 `fyuneru[mongo]`
+- `gemini_toolkit` 需要 `fyuneru[gemini]`
+- `task_queue` 需要 `fyuneru[pipeline]`
 
-### Module Layout (`src/fyuneru/`)
+## 仓库约定
 
-| Module               | Pattern              | External Deps          |
-|----------------------|----------------------|------------------------|
-| `logger.py`          | `configure_logger`   | loguru, tqdm           |
-| `config.py`          | Pure `read_config`   | pyyaml                 |
-| `converter.py`       | Pure functions       | stdlib                 |
-| `markdown_utils.py`  | Pure function        | stdlib re              |
-| `redis_toolkit.py`   | `init_*` + `bind_*`  | redis                  |
-| `s3_toolkit.py`      | `init_*` + `bind_*`  | boto3, mypy-boto3-s3   |
-| `s3_source.py`       | `parse_*` + `bind_*` | boto3 (via s3_toolkit) |
-| `mongo_toolkit.py`   | `init_client`        | pymongo                |
-| `dramatiq_toolkit.py`| `build_broker` + helpers | dramatiq, redis    |
-| `gemini_toolkit.py`  | `init_client` + `build_*` | google-genai      |
-
-### Core Design Patterns
-
-- **`init_*` functions**: Capture config and return zero-arg `Callable`.
-  Client is created lazily when the callable is invoked.
-- **`bind_*` functions**: Take a client + resource name, return one `@safe`-decorated
-  operation closure.
-- **Two-layer config init**: Low-level `init_*_from_config` returns client factory;
-  high-level `init_*_workspace_from_config` binds resource names and returns ready-to-use factories.
-- **`TYPE_CHECKING` guards**: Heavy optional-dependency types imported only under
-  `if TYPE_CHECKING:` to avoid runtime import failures.
-- **`__init__.py` is empty**: No re-exports. Users import directly from submodules:
-  `from fyuneru.redis_toolkit import bind_redis_set_writer`.
-
-## Code Style
-
-### Ruff Configuration
-
-```toml
-[tool.ruff]
-line-length = 88
-
-[tool.ruff.lint]
-select = ["I"]               # import sorting only
-
-[tool.ruff.format]
-quote-style = "double"
-indent-style = "space"
-skip-magic-trailing-comma = false
-```
-
-### Naming Conventions
-
-| Context    | Convention            | Examples                                    |
-|------------|-----------------------|---------------------------------------------|
-| Functions  | `snake_case`          | `init_client`, `bind_s3_reader`, `parse_blob_uri` |
-| Variables  | `snake_case`          | `set_name`, `bucket_id`, `override_path`    |
-| Classes    | `PascalCase`          | `LogLevel`, `RedisSetReader`, `NonSerializable` |
-| Constants  | `UPPER_SNAKE_CASE`    | `BLOB_SCHEME = "blob"`                      |
-| Private    | `_leading_underscore` | `_read_yaml_mapping`, `_merge_config_value` |
-
-### Import Style
-
-Enforced by ruff (`select = ["I"]`), isort-compatible ordering:
-
-1. Standard library (`from collections.abc import Callable`, `from functools import partial`)
-2. Third-party (`from fyuneru.result import safe`, `from redis import Redis`)
-3. Local/project (`from fyuneru.config import read_config_with_override`)
-
-Each group separated by a blank line. Prefer `from X import Y` over bare `import X`.
-
-### Language Convention
-
-- **Code** (identifiers): English
-- **Docstrings and comments**: Chinese
-- **Commit messages**: Chinese, prefixed with type (`fix:`, `refactor:`, `feat:`, `doc:`, `style:`)
-
-### Type Annotations
-
-- Use modern Python 3.11+ syntax: `str | None`, `dict[str, Any]`, `tuple[str, str]`
-- `ResultE[T]` from local `fyuneru.result` for typed error results
-- `Protocol` classes for structural typing of returned callables
-- `Callable[[], T]` for factory return types
-
-## Error Handling
-
-- **`@safe` decorator** from `fyuneru.result`: wraps functions returning `ResultE[T]`
-  (alias for `Result[T, Exception]`) instead of raising.
-- **Protocol classes** define type signatures for safe-wrapped callables.
-- **Guard clauses** with `raise ValueError(...)` / `raise KeyError(...)` for input validation.
-- **No silent failures**: errors surface through `Result` or direct exceptions.
-- **Mutable default args**: always `kwargs: dict | None = None` with `if kwargs is None: kwargs = {}`.
-
-## Testing Patterns
-
-- Plain Python scripts with `assert` statements (no pytest).
-- `if __name__ == "__main__":` block calls test functions, prints Chinese success messages.
-- Error-path tests: `try/except` with `assert False, "message"` as failure.
-- Temp files via `tempfile.TemporaryDirectory` and `Path.write_text`.
-- Tests mock no external services — `test_s3_source.py` and `test_config.py` test pure logic only.
-
-## Key Documentation
-
-- `src/fyuneru/GUIDE.md` — comprehensive API reference (English), distributed with the package
-- `README.md` — user-facing documentation (Chinese)
-- `CHANGELOG.md` — release history (Chinese)
-- `example.yml` — reference YAML config file
+- 注释/docstring 使用中文；代码标识符使用英文。
+- commit message 使用中文并带前缀：`fix:` / `feat:` / `refactor:` / `doc:` / `style:`。
