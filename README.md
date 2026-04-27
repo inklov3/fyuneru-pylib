@@ -239,13 +239,14 @@ class Payload:
 
 
 namespace = calculate_namespace(worker="worker-a", task="etl")
-broker = build_broker(redis_client, namespace=namespace, max_retries=0)
+broker = build_broker(redis_client, namespace=namespace)
 
 
 @actor(
     broker,
     queue_name="default",
     name="process_item",
+    max_retries=0,
 )
 def process_item(payload: Payload):
     print(payload.item_id, payload.priority)

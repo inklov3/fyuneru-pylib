@@ -279,7 +279,6 @@ build_broker(
     redis_client: Redis | RedisCluster,
     namespace: str,
     group_name: str = "default",
-    max_retries: int = 0,
     claim_idle_ms: int | None = None,
     xq_stream: str | None = None,
 ) -> TaskQueueBroker
@@ -289,6 +288,7 @@ actor(
     broker: TaskQueueBroker,
     queue_name: str = "default",
     name: str | None = None,
+    max_retries: int = 0,
 ) -> Callable[[TaskHandler], RegisteredActor]
 # Registers a handler and returns actor object with .send(payload).
 # payload type is inferred from handler signature and must be dataclass.
@@ -318,7 +318,7 @@ TaskQueueBroker.run_worker(
     block_ms: int = 1000,
 ) -> ResultE[int]
 # Consumes and executes tasks; acks on success.
-# On failure, retries up to max_retries then writes to XQ stream.
+# On failure, retries up to actor.max_retries then writes to XQ stream.
 ```
 
 ### gemini_toolkit (`fyuneru.gemini_toolkit`)

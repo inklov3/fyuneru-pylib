@@ -124,6 +124,7 @@ def _process_message(
     except Exception as error:
         _handle_failure(
             broker=broker,
+            binding=binding,
             stream=stream,
             queue_name=queue_name,
             message_id=message_id,
@@ -136,6 +137,7 @@ def _process_message(
 
 def _handle_failure(
     broker: Any,
+    binding: Any,
     stream: str,
     queue_name: str,
     message_id: str,
@@ -146,7 +148,7 @@ def _handle_failure(
 ) -> None:
     payload_str = encode_payload(payload)
 
-    if attempt < broker.max_retries:
+    if attempt < binding.max_retries:
         retry_message_id = broker._next_retry_message_id()
         broker._retry_and_ack(
             source_stream=stream,

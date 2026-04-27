@@ -28,7 +28,6 @@ class TaskQueueBroker:
     redis_client: Redis | RedisCluster
     namespace: str
     group_name: str
-    max_retries: int = 0
     claim_idle_ms: int | None = None
     xq_stream: str | None = None
     _actors: dict[str, dict[str, ActorBinding]] = field(default_factory=dict)
@@ -53,12 +52,14 @@ class TaskQueueBroker:
         self,
         queue_name: str = "default",
         name: str | None = None,
+        max_retries: int = 0,
     ) -> Callable[[TaskHandler], RegisteredActor]:
         return register_actor(
             register=self._register_actor,
             sender=self._send_payload,
             queue_name=queue_name,
             name=name,
+            max_retries=max_retries,
         )
 
     def enqueue(self, message: TaskMessage) -> str:
@@ -89,10 +90,12 @@ class TaskQueueBroker:
         actor_name: str,
         handler: TaskHandler,
         payload_type: type[Any],
+        max_retries: int,
     ) -> None:
         self._actors.setdefault(queue_name, {})[actor_name] = ActorBinding(
             handler=handler,
             payload_type=payload_type,
+            max_retries=max_retries,
         )
 
     def _send_payload(
@@ -277,12 +280,9 @@ def build_broker(
     redis_client: Redis | RedisCluster,
     namespace: str,
     group_name: str = "default",
-    max_retries: int = 0,
     claim_idle_ms: int | None = None,
     xq_stream: str | None = None,
 ) -> TaskQueueBroker:
-    if max_retries < 0:
-        raise ValueError("max_retries 不能小于 0")
     if claim_idle_ms is not None and claim_idle_ms <= 0:
         raise ValueError("claim_idle_ms 必须大于 0")
 
@@ -290,7 +290,6 @@ def build_broker(
         redis_client=redis_client,
         namespace=namespace,
         group_name=group_name,
-        max_retries=max_retries,
         claim_idle_ms=claim_idle_ms,
         xq_stream=xq_stream,
     )
@@ -334,10 +333,12 @@ def actor(
     broker: TaskQueueBroker,
     queue_name: str = "default",
     name: str | None = None,
+    max_retries: int = 0,
 ) -> Callable[[TaskHandler], RegisteredActor]:
     return broker.actor(
         queue_name=queue_name,
         name=name,
+        max_retries=max_retries,
     )
 
 

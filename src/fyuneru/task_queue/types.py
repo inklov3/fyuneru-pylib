@@ -23,6 +23,7 @@ class TaskActor(Protocol):
 class ActorBinding:
     handler: TaskHandler
     payload_type: type[Any]
+    max_retries: int = 0
 
 
 @dataclass(frozen=True)

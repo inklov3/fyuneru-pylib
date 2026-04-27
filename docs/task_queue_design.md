@@ -35,7 +35,6 @@ broker = build_broker(
     redis_client=redis_client,
     namespace=namespace,
     group_name="default",
-    max_retries=0,
 )
 
 
@@ -43,6 +42,7 @@ broker = build_broker(
     broker,
     queue_name="default",
     name="process_item",
+    max_retries=0,
 )
 def process_item(payload: Payload):
     print(payload.item_id, payload.priority)
@@ -116,12 +116,12 @@ unwrap(
 - 消费：`XREADGROUP`
 - 成功：执行 handler 后 `XACK`
 - 失败：
-  - `attempt < max_retries`：重试并 ACK 原消息
+  - `attempt < actor.max_retries`：重试并 ACK 原消息
   - 否则写入 XQ 并 ACK 原消息
 
 默认配置：
 
-- `max_retries=0`：失败直接进 XQ
+- `actor.max_retries=0`：失败直接进 XQ
 - `claim_idle_ms=None`：不做超时消息接管
 
 XQ 默认流名：`<namespace>:xq`。

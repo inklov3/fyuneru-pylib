@@ -195,7 +195,7 @@ def test_task_queue_send_and_consume_success_dataclass() -> None:
 def test_task_queue_failure_goes_to_xq_when_no_retry() -> None:
     namespace = calculate_namespace(worker="worker-b", task="etl")
     redis_client = FakeRedisClient()
-    broker = build_broker(redis_client, namespace=namespace, max_retries=0)
+    broker = build_broker(redis_client, namespace=namespace)
 
     @actor(broker, queue_name="default", name="always_fail")
     def always_fail(payload: Payload) -> None:
@@ -225,9 +225,9 @@ def test_task_queue_failure_goes_to_xq_when_no_retry() -> None:
 def test_task_queue_retry_uses_atomic_script() -> None:
     namespace = calculate_namespace(worker="worker-d", task="etl")
     redis_client = FakeRedisClient()
-    broker = build_broker(redis_client, namespace=namespace, max_retries=1)
+    broker = build_broker(redis_client, namespace=namespace)
 
-    @actor(broker, queue_name="default", name="fail_once")
+    @actor(broker, queue_name="default", name="fail_once", max_retries=1)
     def fail_once(payload: Payload) -> None:
         _ = payload
         raise RuntimeError("retry")
@@ -254,7 +254,7 @@ def test_task_queue_lua_fallback_without_register_script() -> None:
     namespace = calculate_namespace(worker="worker-e", task="etl")
     redis_client = FakeRedisClient()
     redis_client.fail_register_script = True
-    broker = build_broker(redis_client, namespace=namespace, max_retries=0)
+    broker = build_broker(redis_client, namespace=namespace)
 
     @actor(broker, queue_name="default", name="always_fail")
     def always_fail(payload: Payload) -> None:
@@ -396,6 +396,18 @@ def test_register_actor_rejects_multiple_payload_parameters() -> None:
         assert "actor 函数必须且仅能声明一个 payload 参数" in str(error)
 
 
+def test_actor_rejects_negative_max_retries() -> None:
+    namespace = calculate_namespace(worker="worker-i", task="etl")
+    redis_client = FakeRedisClient()
+    broker = build_broker(redis_client, namespace=namespace)
+
+    try:
+        actor(broker, queue_name="default", name="bad", max_retries=-1)
+        assert False, "应抛出 ValueError"
+    except ValueError as error:
+        assert "max_retries 不能小于 0" in str(error)
+
+
 def test_run_worker_returns_failure_for_invalid_message_payload() -> None:
     namespace = calculate_namespace(worker="worker-c", task="etl")
     redis_client = FakeRedisClient()
@@ -432,5 +444,6 @@ if __name__ == "__main__":
     test_register_actor_rejects_non_dataclass_annotation()
     test_register_actor_rejects_missing_annotation()
     test_register_actor_rejects_multiple_payload_parameters()
+    test_actor_rejects_negative_max_retries()
     test_run_worker_returns_failure_for_invalid_message_payload()
     print("task_queue 测试通过")

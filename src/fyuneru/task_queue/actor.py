@@ -18,6 +18,7 @@ class RegisteredActor:
     queue_name: str
     handler: TaskHandler
     payload_type: type[Any]
+    max_retries: int = 0
 
     def __call__(self, payload: Any) -> Any:
         return self.handler(payload)
@@ -29,21 +30,26 @@ class RegisteredActor:
 
 
 def actor(
-    register: Callable[[str, str, TaskHandler, type[Any]], None],
+    register: Callable[[str, str, TaskHandler, type[Any], int], None],
     sender: Callable[[str, str, dict[str, Any], int, float | None], str],
     queue_name: str = "default",
     name: str | None = None,
+    max_retries: int = 0,
 ) -> Callable[[TaskHandler], RegisteredActor]:
+    if max_retries < 0:
+        raise ValueError("max_retries 不能小于 0")
+
     def decorator(function: TaskHandler) -> RegisteredActor:
         actor_name = function.__name__ if name is None else name
         payload_type = resolve_payload_type(function)
-        register(queue_name, actor_name, function, payload_type)
+        register(queue_name, actor_name, function, payload_type, max_retries)
         return RegisteredActor(
             _sender=sender,
             name=actor_name,
             queue_name=queue_name,
             handler=function,
             payload_type=payload_type,
+            max_retries=max_retries,
         )
 
     return decorator
