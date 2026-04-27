@@ -4,7 +4,7 @@ import inspect
 from collections.abc import Callable
 from dataclasses import dataclass, is_dataclass
 from traceback import format_exc
-from typing import Any, get_type_hints
+from typing import Any, cast, get_type_hints
 
 from fyuneru.result import ResultE, safe
 from fyuneru.task_queue.codec import normalize_payload_envelope
@@ -75,13 +75,9 @@ def resolve_payload_type(function: TaskHandler) -> type[Any]:
 
     type_hints = get_type_hints(function)
     payload_type = type_hints.get(parameter.name)
-    if payload_type is None:
-        raise TypeError("payload 参数必须声明 dataclass 类型注解")
-    if not isinstance(payload_type, type):
-        raise TypeError("payload 参数类型必须是 dataclass")
     if not is_dataclass(payload_type):
         raise TypeError("payload 参数类型必须是 dataclass")
-    return payload_type
+    return cast(type[Any], payload_type)
 
 
 def build_xq_fields(
