@@ -275,8 +275,9 @@ ensure_index(
     sparse: bool = False,
     background: bool = True,
 ) -> ResultE[str]
-# Creates index only when index name does not exist.
-# Existence check is name-only (no deep comparison by keys/options).
+# Creates index when absent.
+# If same index name exists but keys/unique/sparse mismatch expected values,
+# returns Failure with conflict error.
 ```
 
 ### worker (`fyuneru.worker`)

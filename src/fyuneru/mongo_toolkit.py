@@ -83,6 +83,19 @@ def ensure_index(
 
     existing_indexes = collection.index_information()
     if normalized_name in existing_indexes:
+        existing = existing_indexes[normalized_name]
+        existing_keys = existing.get("key")
+        existing_unique = bool(existing.get("unique", False))
+        existing_sparse = bool(existing.get("sparse", False))
+
+        if existing_keys is None:
+            raise ValueError(f"索引 {normalized_name} 缺少 key 定义")
+        if list(existing_keys) != normalized_keys:
+            raise ValueError(f"索引 {normalized_name} 的 keys 与期望不一致")
+        if existing_unique != unique:
+            raise ValueError(f"索引 {normalized_name} 的 unique 与期望不一致")
+        if existing_sparse != sparse:
+            raise ValueError(f"索引 {normalized_name} 的 sparse 与期望不一致")
         return normalized_name
 
     return str(

@@ -55,15 +55,16 @@ class WorkerEnv:
 
 对齐 `setup_worker_env(label, config)` 语义。
 
-1. 初始化日志系统。
-2. 校验基础标识：`workspace`、`task`、`label` 非空。
-3. 若存在 `redis` 配置：初始化 redis client。
-4. 基于 `workspace/task/label` 计算 checkpoint key。
-5. 若 redis 可用：构造 `advance_checkpoint/is_past_checkpoint`。
-6. 若存在 `s3` 配置：初始化 s3 client 并构造 `s3_writer/s3_reader`。
-7. 若存在 `s3_sources` 配置：构造 `source_reader`。
-8. 若存在 `mongo` 配置：初始化 mongo db。
-9. 组装并返回 `WorkerEnv`。
+1. 校验基础标识：`workspace`、`task`、`label` 非空。
+2. 若存在 `redis` 配置：初始化 redis client。
+3. 基于 `workspace/task/label` 计算 checkpoint key。
+4. 若 redis 可用：构造 `advance_checkpoint/is_past_checkpoint`。
+5. 若存在 `s3` 配置：初始化 s3 client 并构造 `s3_writer/s3_reader`。
+6. 若存在 `s3_sources` 配置：构造 `source_reader`。
+7. 若存在 `mongo` 配置：初始化 mongo db。
+8. 组装并返回 `WorkerEnv`。
+
+说明：`setup_worker_env` 不负责日志初始化，日志由应用入口统一配置。
 
 建议接口：
 
@@ -148,7 +149,8 @@ def ensure_index(
 ```
 
 约束：
-- `ensure_index` 仅按 `name` 判定是否存在，不做 keys/options 深比较。
+- `ensure_index` 若同名索引存在且 `keys/unique/sparse` 与期望不一致，应立即报错（fail-fast）。
+- `background` 不参与冲突判定。
 
 ### 5.1 使用方法
 
@@ -230,7 +232,7 @@ if env.mongo_db is not None:
 
 5. 修改 `src/fyuneru/mongo_toolkit.py`
    - 新增 `bind_collection`。
-   - 新增 `ensure_index`（按 name 判定存在，不深比较）。
+   - 新增 `ensure_index`（同名索引定义冲突立即报错）。
 
 6. 修改 `src/fyuneru/GUIDE.md`
    - 补充 `worker` 包使用说明。
@@ -261,7 +263,7 @@ if env.mongo_db is not None:
 新增或补充 mongo 测试：
 
 - `bind_collection` 返回目标 collection。
-- `ensure_index`：索引已存在时不重复创建；不存在时创建。
+- `ensure_index`：索引不存在时创建；同名且定义一致时复用；同名但定义冲突时报错。
 
 ---
 
@@ -285,4 +287,4 @@ if env.mongo_db is not None:
 - `calculate_result_key` 支持同一 worker 多 artifact。
 - `source_reader` 仅在 `s3_sources` 存在时构建。
 - Env 不包含 broker 与生命周期控制逻辑。
-- `ensure_index` 行为符合“按 name 判定存在”的约束。
+- `ensure_index` 行为符合“同名索引定义冲突 fail-fast”的约束。

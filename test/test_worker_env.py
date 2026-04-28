@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 from fyuneru.mongo_toolkit import bind_collection, ensure_index
 from fyuneru.result import Failure, Success, is_failure, is_success, unwrap
 from fyuneru.worker import calculate_checkpoint_key, calculate_result_key, setup_worker_env
@@ -36,7 +34,12 @@ class FakeCollection:
         background: bool,
     ) -> str:
         self.create_calls.append((keys, name, unique, sparse, background))
-        self.indexes[name] = {}
+        self.indexes[name] = {
+            "key": keys,
+            "unique": unique,
+            "sparse": sparse,
+            "background": background,
+        }
         return name
 
 
@@ -80,7 +83,6 @@ def test_setup_worker_env_with_all_resources() -> None:
     fake_redis = FakeRedisClient()
     fake_db = FakeDatabase()
 
-    original_configure_logger = worker_env_module.configure_logger
     original_redis_init = worker_env_module.redis_toolkit.init_client_from_config
     original_s3_init = worker_env_module.s3_toolkit.init_client_from_config
     original_bind_s3_writer = worker_env_module.s3_toolkit.bind_s3_writer
@@ -90,7 +92,6 @@ def test_setup_worker_env_with_all_resources() -> None:
     original_mongo_init_db = worker_env_module.mongo_toolkit.init_database_from_config
 
     try:
-        worker_env_module.configure_logger = lambda level="INFO", log_dir=None: Success(None)
         worker_env_module.redis_toolkit.init_client_from_config = (
             lambda _config: lambda: fake_redis
         )
@@ -139,7 +140,6 @@ def test_setup_worker_env_with_all_resources() -> None:
         assert unwrap(env.s3_reader("foo")) == b"s3-data"
         assert unwrap(env.source_reader("blob://src/object-1")) == b"source-data"
     finally:
-        worker_env_module.configure_logger = original_configure_logger
         worker_env_module.redis_toolkit.init_client_from_config = original_redis_init
         worker_env_module.s3_toolkit.init_client_from_config = original_s3_init
         worker_env_module.s3_toolkit.bind_s3_writer = original_bind_s3_writer
@@ -170,9 +170,31 @@ def test_bind_collection_and_ensure_index() -> None:
         collection,
         "idx_media_key",
         [("media_key", 1)],
+        unique=True,
+        sparse=False,
+        background=False,
     )
     assert is_success(second)
     assert len(collection.create_calls) == 1
+
+
+def test_ensure_index_rejects_conflict_definition() -> None:
+    collection = FakeCollection()
+    collection.indexes["idx_media_key"] = {
+        "key": [("media_key", 1)],
+        "unique": False,
+        "sparse": False,
+    }
+
+    result = ensure_index(
+        collection,
+        "idx_media_key",
+        [("media_key", 1)],
+        unique=True,
+    )
+    assert is_failure(result)
+    assert isinstance(result, Failure)
+    assert "unique 与期望不一致" in str(result.error)
 
 
 def test_ensure_index_rejects_invalid_keys() -> None:
@@ -188,5 +210,6 @@ if __name__ == "__main__":
     test_setup_worker_env_without_optional_resources()
     test_setup_worker_env_with_all_resources()
     test_bind_collection_and_ensure_index()
+    test_ensure_index_rejects_conflict_definition()
     test_ensure_index_rejects_invalid_keys()
     print("worker_env 测试通过")
