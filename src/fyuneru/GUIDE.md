@@ -22,7 +22,7 @@ uv add "fyuneru[gemini] @ git+https://github.com/inklov3/fyuneru-pylib.git"     
 - **`bind_*`** binds client/resources and returns a single composable operation function
 - **`build_*`** builds higher-level composed objects
 - **`@safe`** wraps return values in `Result` type; use `unwrap(result)` to extract the value
-- **Checkpoint** is implemented by composing `calculate_checkpoint_key()` + redis set binders — no dedicated abstraction
+- **Checkpoint** key follows `workspace/task/label` hierarchy and can be composed with redis set binders or `fyuneru.worker` env setup
 
 ## Modules
 
@@ -116,15 +116,15 @@ bind_redis_set_reader(client: Redis | RedisCluster, set_name: str) -> RedisSetRe
 bind_redis_set_deleter(client: Redis | RedisCluster, set_name: str) -> RedisSetDeleter
 # deleter(key: str) -> ResultE[None]  — srem
 
-calculate_checkpoint_key(checkpoint: str, task: str, worker: str) -> str
-# Returns "{worker}:{task}:checkpoint:{checkpoint}"
+calculate_checkpoint_key(workspace: str, task: str, label: str) -> str
+# Returns "{workspace}:{task}:checkpoint:{label}"
 ```
 
 **Checkpoint pattern:**
 ```python
 from fyuneru.result import unwrap
 
-checkpoint_key = calculate_checkpoint_key(checkpoint="step1", task="etl", worker="w1")
+checkpoint_key = calculate_checkpoint_key(workspace="ws-a", task="etl", label="node-1")
 advance = bind_redis_set_writer(redis, set_name=checkpoint_key)
 is_past = bind_redis_set_reader(redis, set_name=checkpoint_key)
 delete = bind_redis_set_deleter(redis, set_name=checkpoint_key)
@@ -243,7 +243,13 @@ s3_sources:
 Requires: `fyuneru[mongo]`
 
 ```python
-from fyuneru.mongo_toolkit import init_client, init_client_from_config, init_database_from_config
+from fyuneru.mongo_toolkit import (
+    bind_collection,
+    ensure_index,
+    init_client,
+    init_client_from_config,
+    init_database_from_config,
+)
 
 init_client(uri: str, timeout: int = 10000)
     -> Callable[[], MongoClient]
@@ -257,6 +263,49 @@ init_client_from_config(config: dict) -> Callable[[], MongoClient]
 init_database_from_config(config: dict) -> Callable[[], Database]
 # Reads config["mongo"] including required "db" field.
 # Returns Callable[[], Database].
+
+bind_collection(db: Database, name: str) -> Collection
+# Returns db[name] after validating collection name.
+
+ensure_index(
+    collection: Collection,
+    name: str,
+    keys: list[tuple[str, int]],
+    unique: bool = False,
+    sparse: bool = False,
+    background: bool = True,
+) -> ResultE[str]
+# Creates index when absent.
+# If same index name exists but keys/unique/sparse mismatch expected values,
+# returns Failure with conflict error.
+```
+
+### worker (`fyuneru.worker`)
+
+Requires optional dependencies based on enabled resources (`redis` / `s3` / `mongo`).
+
+```python
+from fyuneru.worker import (
+    WorkerEnv,
+    calculate_checkpoint_key,
+    calculate_result_key,
+    setup_worker_env,
+)
+
+setup_worker_env(label: str, config: dict[str, Any]) -> WorkerEnv
+# Builds worker environment with optional resources.
+# redis/s3/mongo/source_reader are created only if config sections exist.
+
+calculate_checkpoint_key(workspace: str, task: str, label: str) -> str
+# Returns "{workspace}:{task}:checkpoint:{label}".
+
+calculate_result_key(
+    workspace: str,
+    task: str,
+    key: str,
+    artifact: str,
+) -> str
+# Returns "{workspace}/{task}/result/{key}/{artifact}.pkl".
 ```
 
 ### task_queue (`fyuneru.task_queue`)
