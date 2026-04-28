@@ -300,11 +300,11 @@ calculate_checkpoint_key(workspace: str, task: str, label: str) -> str
 
 calculate_result_key(
     workspace: str,
-    media_key: str,
-    label: str,
+    task: str,
+    key: str,
     artifact: str,
 ) -> str
-# Returns "{workspace}/{media_key}/results/{label}/{artifact}.pkl".
+# Returns "{workspace}/{task}/result/{key}/{artifact}.pkl".
 ```
 
 ### task_queue (`fyuneru.task_queue`)

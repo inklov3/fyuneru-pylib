@@ -53,8 +53,8 @@ class FakeDatabase:
 def test_calculate_keys() -> None:
     assert calculate_checkpoint_key("ws-a", "etl", "node-1") == "ws-a:etl:checkpoint:node-1"
     assert (
-        calculate_result_key("ws-a", "media-1", "node-1", "summary")
-        == "ws-a/media-1/results/node-1/summary.pkl"
+        calculate_result_key("ws-a", "etl", "unit-1", "summary")
+        == "ws-a/etl/result/unit-1/summary.pkl"
     )
 
 

@@ -10,15 +10,15 @@ from fyuneru.worker.types import WorkerEnv
 
 def calculate_result_key(
     workspace: str,
-    media_key: str,
-    label: str,
+    task: str,
+    key: str,
     artifact: str,
 ) -> str:
     workspace_name = _require_non_empty_text("workspace", workspace)
-    media_name = _require_non_empty_text("media_key", media_key)
-    label_name = _require_non_empty_text("label", label)
+    task_name = _require_non_empty_text("task", task)
+    unit_key = _require_non_empty_text("key", key)
     artifact_name = _require_non_empty_text("artifact", artifact)
-    return f"{workspace_name}/{media_name}/results/{label_name}/{artifact_name}.pkl"
+    return f"{workspace_name}/{task_name}/result/{unit_key}/{artifact_name}.pkl"
 
 
 def setup_worker_env(label: str, config: dict[str, Any]) -> WorkerEnv:

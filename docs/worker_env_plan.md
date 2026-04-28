@@ -94,11 +94,11 @@ def calculate_checkpoint_key(workspace: str, task: str, label: str) -> str:
 ```python
 def calculate_result_key(
     workspace: str,
-    media_key: str,
-    label: str,
+    task: str,
+    key: str,
     artifact: str,
 ) -> str:
-    return f"{workspace}/{media_key}/results/{label}/{artifact}.pkl"
+    return f"{workspace}/{task}/result/{key}/{artifact}.pkl"
 ```
 
 说明：
@@ -124,8 +124,8 @@ def setup_worker_env(label: str, config: dict[str, Any]) -> WorkerEnv: ...
 
 def calculate_result_key(
     workspace: str,
-    media_key: str,
-    label: str,
+    task: str,
+    key: str,
     artifact: str,
 ) -> str: ...
 
@@ -153,6 +153,8 @@ def ensure_index(
 ### 5.1 使用方法
 
 ```python
+from functools import partial
+
 from fyuneru.result import unwrap
 from fyuneru.worker import calculate_result_key, setup_worker_env
 from fyuneru.mongo_toolkit import bind_collection, ensure_index
@@ -172,10 +174,14 @@ config = {
 
 env = setup_worker_env(label="node-demux", config=config)
 
-result_key = calculate_result_key(
+result_key_builder = partial(
+    calculate_result_key,
     workspace=config["workspace"],
-    media_key="media-001",
-    label=env.label,
+    task=config["task"],
+)
+
+result_key = result_key_builder(
+    key="unit-001",
     artifact="transcript",
 )
 
@@ -184,8 +190,8 @@ if env.mongo_db is not None:
     unwrap(
         ensure_index(
             collection,
-            "idx_media_key",
-            [("media_key", 1)],
+            "idx_key",
+            [("key", 1)],
             unique=False,
         )
     )
@@ -213,7 +219,7 @@ if env.mongo_db is not None:
 
 2. 新增 `src/fyuneru/worker/env.py`
    - 实现 `setup_worker_env(label, config)`。
-   - 实现 `calculate_result_key(workspace, media_key, label, artifact)`。
+   - 实现 `calculate_result_key(workspace, task, key, artifact)`。
    - 做 `workspace/task/label` 参数校验。
 
 3. 新增 `src/fyuneru/worker/__init__.py`
@@ -250,7 +256,7 @@ if env.mongo_db is not None:
 - redis/s3/mongo/s3_sources 缺失时对应字段为 `None`。
 - 配置存在时对应字段可用。
 - checkpoint key 为 `workspace:task:checkpoint:label`。
-- result key 为 `{workspace}/{media_key}/results/{label}/{artifact}.pkl`。
+- result key 为 `{workspace}/{task}/result/{key}/{artifact}.pkl`。
 
 新增或补充 mongo 测试：
 
