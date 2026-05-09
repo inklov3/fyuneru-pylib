@@ -8,7 +8,7 @@
 
 - 推荐从子模块导入，例如 `from fyuneru.redis_toolkit import bind_redis_set_writer`
 - 默认安装只包含核心依赖；使用 Redis、MongoDB、Gemini 等能力时，需要安装对应 extra
-- `config.py` 只读取 YAML，并支持 `base.yml + pod.yml` 的单层增量覆盖；各 toolkit 模块提供 `init_*_from_config` 函数从配置构建 initializer
+- `config.py` 只读取 YAML，并支持 `base.yml + pod.yml` 的单层增量覆盖；同时提供 `parse_redis_config` / `parse_s3_config` / `parse_mongo_config` 强类型解析器
 
 ## 核心约定
 
@@ -61,6 +61,7 @@ uv add "fyuneru[redis,s3] @ git+https://github.com/inklov3/fyuneru-pylib.git"
 | `fyuneru.s3_source` | 通过 `blob://桶id/key` 协议透明读取多个 S3 源 | `s3` |
 | `fyuneru.mongo_toolkit` | MongoClient 惰性初始化 | `mongo` |
 | `fyuneru.task_queue` | Redis Streams broker、Actor 注册、消息投递与 Worker 消费 | `pipeline` |
+| `fyuneru.dramatiq_toolkit` | Dramatiq RedisBroker 构建、消息构造与批量投递 | `pipeline` |
 | `fyuneru.gemini_toolkit` | Gemini client 初始化与结构化输出配置 | `gemini` |
 
 ## 快速上手
@@ -86,7 +87,13 @@ for item in tqdm_loguru(items, desc="Processing"):
 ```python
 from pathlib import Path
 
-from fyuneru.config import read_config, read_config_with_override
+from fyuneru.config import (
+    parse_mongo_config,
+    parse_redis_config,
+    parse_s3_config,
+    read_config,
+    read_config_with_override,
+)
 from fyuneru.gemini_toolkit import init_client_from_config as init_llm_client
 from fyuneru.mongo_toolkit import init_client_from_config as init_mongo_client
 from fyuneru.mongo_toolkit import init_database_from_config
@@ -99,6 +106,11 @@ cfg_with_pod = read_config_with_override(
     Path("config.yml"),
     Path("pod.yml"),
 )
+
+# 强类型配置解析（统一字段校验与报错路径）
+redis_cfg = parse_redis_config(cfg_with_pod)
+s3_cfg = parse_s3_config(cfg_with_pod)
+mongo_cfg = parse_mongo_config(cfg_with_pod)
 
 # 底层 helper：返回裸 client 工厂
 redis = init_redis_client(cfg_with_pod)()
@@ -172,6 +184,7 @@ client = init_client(
     access_key_id="ak",
     secret_access_key="sk",
     region_name="us-east-1",
+    addressing_style="virtual",  # 可选: "virtual" | "path"
 )()
 
 write = bind_s3_writer(client, bucket="my-bucket")
@@ -229,7 +242,7 @@ collection = db["items"]
 from dataclasses import dataclass
 
 from fyuneru.result import unwrap
-from fyuneru.task_queue import actor, build_broker, calculate_namespace
+from fyuneru.task_queue import actor, build_broker, calculate_namespace, new_message, send_messages
 
 
 @dataclass(frozen=True)
@@ -253,6 +266,25 @@ def process_item(payload: Payload):
 
 
 unwrap(process_item.send(Payload(item_id="item-1", priority=3)))
+
+batch_results = send_messages(
+    broker,
+    [
+        new_message(
+            name="process_item",
+            queue_name="default",
+            payload=Payload(item_id="item-2", priority=1),
+        ),
+        new_message(
+            name="process_item",
+            queue_name="default",
+            payload=Payload(item_id="item-3", priority=2),
+        ),
+    ],
+)
+for result in batch_results:
+    unwrap(result)
+
 unwrap(
     broker.run_worker(
         queue_name="default",

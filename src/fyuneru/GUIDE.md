@@ -45,9 +45,15 @@ tqdm_loguru(iterable, level="INFO", **tqdm_kwargs) -> tqdm
 ### config (`fyuneru.config`)
 
 ```python
-from fyuneru.config import read_config, read_config_with_override
+from fyuneru.config import (
+    parse_mongo_config,
+    parse_redis_config,
+    parse_s3_config,
+    read_config,
+    read_config_with_override,
+)
 
-read_config(config: Path) -> dict[str, list | dict]
+read_config(config: Path) -> dict[str, Any]
 # Reads YAML config file. Empty file returns {}.
 # Raises ValueError for non-mapping root.
 
@@ -58,6 +64,12 @@ read_config_with_override(base: Path, override: Path | None = None) -> dict[str,
 # - scalar: override replaces base
 # - list: append (base + override)
 # Non-goals: no template rendering, no field deletion semantics.
+
+parse_redis_config(config: dict[str, Any]) -> RedisConfig
+parse_s3_config(config: dict[str, Any]) -> S3Config
+parse_mongo_config(config: dict[str, Any]) -> MongoConfig
+# Typed parser with explicit field validation and path-aware errors.
+# parse_s3_config supports optional addressing_style: "virtual" | "path".
 ```
 
 ### converter (`fyuneru.converter`)
@@ -151,8 +163,10 @@ init_client(
     secret_access_key: str,
     region_name: str | None = None,
     config: Config | None = None,    # botocore.config.Config
+    addressing_style: str = "virtual",
 ) -> Callable[[], S3Client]
-# Default config: signature_version="s3v4", addressing_style="virtual"
+# Default config: signature_version="s3v4".
+# addressing_style supports "virtual" or "path".
 
 init_client_from_config(config: dict) -> Callable[[], S3Client]
 # Reads config["s3"]. Returns Callable[[], S3Client].
@@ -319,6 +333,7 @@ from fyuneru.task_queue import (
     calculate_namespace,
     new_message,
     send_message,
+    send_messages,
 )
 
 calculate_namespace(worker: str, task: str) -> str
@@ -354,6 +369,9 @@ new_message(
 send_message(broker: TaskQueueBroker, message: TaskMessage) -> ResultE[str]
 # Enqueues message into stream and returns message id.
 
+send_messages(broker: TaskQueueBroker, messages: list[TaskMessage]) -> list[ResultE[str]]
+# Batch enqueue helper; returns per-message ResultE list.
+
 TaskMessage.payload uses envelope schema:
 # {
 #   "payload_type": "your_module.YourDataclass",
@@ -371,6 +389,22 @@ TaskQueueBroker.run_worker(
 # On failure, retries up to actor.max_retries then writes to XQ stream.
 # If claim_idle_ms is set, worker first uses XAUTOCLAIM to reclaim stale pending entries.
 # xq_stream defaults to "<namespace>:xq" and can be overridden in build_broker.
+```
+
+### dramatiq_toolkit (`fyuneru.dramatiq_toolkit`)
+
+Requires: `fyuneru[pipeline]`
+
+```python
+from fyuneru.dramatiq_toolkit import (
+    enqueue_many,
+    new_message,
+    send_message,
+)
+
+enqueue_many(broker: Broker, messages: list[Message]) -> EnqueueManyResult
+# Batch enqueue helper for Dramatiq.
+# Returns success_count / failure_count / failures[(index, error)].
 ```
 
 ### gemini_toolkit (`fyuneru.gemini_toolkit`)
@@ -427,8 +461,9 @@ s3:
   endpoint: https://s3.example.com
   access_key_id: xxx
   secret_access_key: xxx
-  region_name: us-east-1  # optional
-  bucket: my-bucket        # required by init_workspace_from_config
+  region_name: us-east-1     # optional
+  bucket: my-bucket          # required by init_workspace_from_config
+  addressing_style: virtual  # optional: virtual | path
 
 mongo:
   uri: mongodb://localhost:27017
@@ -455,7 +490,13 @@ s3_sources:                        # optional, for blob:// multi-source
 ```python
 from pathlib import Path
 
-from fyuneru.config import read_config, read_config_with_override
+from fyuneru.config import (
+    parse_mongo_config,
+    parse_redis_config,
+    parse_s3_config,
+    read_config,
+    read_config_with_override,
+)
 from fyuneru.gemini_toolkit import init_client_from_config as init_llm_client
 from fyuneru.mongo_toolkit import init_client_from_config as init_mongo_client
 from fyuneru.mongo_toolkit import init_database_from_config
@@ -468,6 +509,11 @@ cfg_with_pod = read_config_with_override(
     base=Path("config.yml"),
     override=Path("pod.yml"),
 )
+
+# Typed parsers: explicit field validation and stable value types
+redis_cfg = parse_redis_config(cfg_with_pod)
+s3_cfg = parse_s3_config(cfg_with_pod)
+mongo_cfg = parse_mongo_config(cfg_with_pod)
 
 # Low-level: each returns a Callable that creates the raw client
 redis = init_redis_client(cfg_with_pod)()
