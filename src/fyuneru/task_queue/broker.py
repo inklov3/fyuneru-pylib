@@ -71,6 +71,19 @@ class TaskQueueBroker:
             eta=message.eta,
         )
 
+    def enqueue_many(self, messages: list[TaskMessage]) -> list[ResultE[str]]:
+        return [
+            safe_send_message(
+                sender=self._send_payload,
+                queue_name=message.queue_name,
+                name=message.name,
+                payload=message.payload,
+                attempt=message.attempt,
+                eta=message.eta,
+            )
+            for message in messages
+        ]
+
     def run_worker(
         self,
         queue_name: str = "default",
@@ -327,6 +340,13 @@ def send_message(
         attempt=message.attempt,
         eta=message.eta,
     )
+
+
+def send_messages(
+    broker: TaskQueueBroker,
+    messages: list[TaskMessage],
+) -> list[ResultE[str]]:
+    return broker.enqueue_many(messages)
 
 
 def actor(

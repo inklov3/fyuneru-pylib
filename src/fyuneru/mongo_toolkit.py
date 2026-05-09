@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 from pymongo import MongoClient
 
+from fyuneru.config import parse_mongo_config
 from fyuneru.result import ResultE, safe
 
 if TYPE_CHECKING:
@@ -23,11 +24,8 @@ def init_client_from_config(config: dict) -> Callable[[], MongoClient]:
 
     config["mongo"] 必须包含 uri。可选: timeout。
     """
-    mongo_cfg = config["mongo"]
-    kwargs: dict = {"uri": mongo_cfg["uri"]}
-    if "timeout" in mongo_cfg:
-        kwargs["timeout"] = mongo_cfg["timeout"]
-    return init_client(**kwargs)
+    mongo_cfg = parse_mongo_config(config)
+    return init_client(uri=mongo_cfg.uri, timeout=mongo_cfg.timeout)
 
 
 def init_database_from_config(config: dict) -> Callable[[], Database]:
@@ -35,12 +33,12 @@ def init_database_from_config(config: dict) -> Callable[[], Database]:
 
     config["mongo"] 必须包含 uri, db。可选: timeout。
     """
-    mongo_cfg = config["mongo"]
-    init = init_client(
-        uri=mongo_cfg["uri"],
-        **({} if "timeout" not in mongo_cfg else {"timeout": mongo_cfg["timeout"]}),
-    )
-    db = mongo_cfg["db"]
+    mongo_cfg = parse_mongo_config(config)
+    if mongo_cfg.db is None:
+        raise KeyError("缺少字段: mongo.db")
+
+    init = init_client(uri=mongo_cfg.uri, timeout=mongo_cfg.timeout)
+    db = mongo_cfg.db
     return lambda: init()[db]
 
 

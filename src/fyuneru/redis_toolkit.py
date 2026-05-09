@@ -10,6 +10,7 @@ from typing import Protocol
 
 from redis import Redis, RedisCluster
 
+from fyuneru.config import parse_redis_config
 from fyuneru.result import ResultE, safe
 
 
@@ -30,18 +31,20 @@ def init_client_from_config(
 
     config["redis"] 必须包含 host, port。可选: password, cluster, db。
     """
-    redis_cfg = config["redis"]
+    redis_cfg = parse_redis_config(config)
     extra: dict = {}
-    if "password" in redis_cfg:
-        extra["password"] = redis_cfg["password"]
-    if redis_cfg.get("cluster", False):
+    if redis_cfg.password is not None:
+        extra["password"] = redis_cfg.password
+    if redis_cfg.cluster:
         return init_client_cluster(
-            host=redis_cfg["host"], port=redis_cfg["port"], **extra
+            host=redis_cfg.host,
+            port=redis_cfg.port,
+            **extra,
         )
     return init_client_standalone(
-        host=redis_cfg["host"],
-        port=redis_cfg["port"],
-        db=redis_cfg.get("db", 0),
+        host=redis_cfg.host,
+        port=redis_cfg.port,
+        db=redis_cfg.db,
         **extra,
     )
 

@@ -6,6 +6,7 @@ from fyuneru.task_queue.broker import (
     calculate_namespace,
     new_message,
     send_message,
+    send_messages,
 )
 from fyuneru.task_queue.types import ActorBinding, TaskActor, TaskHandler, TaskMessage
 from fyuneru.task_queue.worker import run_worker
@@ -23,4 +24,5 @@ __all__ = [
     "new_message",
     "run_worker",
     "send_message",
+    "send_messages",
 ]

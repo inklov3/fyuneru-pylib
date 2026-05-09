@@ -3,7 +3,13 @@
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from fyuneru.config import read_config, read_config_from_paths
+from fyuneru.config import (
+    parse_mongo_config,
+    parse_redis_config,
+    parse_s3_config,
+    read_config,
+    read_config_from_paths,
+)
 
 
 def _write_yaml(path: Path, content: str) -> None:
@@ -108,7 +114,81 @@ llm:
         assert read_config_from_paths([base_path]) == read_config(base_path)
 
 
+def test_parse_redis_config_success() -> None:
+    parsed = parse_redis_config(
+        {
+            "redis": {
+                "host": "127.0.0.1",
+                "port": 6379,
+                "db": 1,
+                "password": "secret",
+                "cluster": False,
+            }
+        }
+    )
+    assert parsed.host == "127.0.0.1"
+    assert parsed.port == 6379
+    assert parsed.db == 1
+    assert parsed.password == "secret"
+    assert parsed.cluster is False
+
+
+def test_parse_s3_config_success() -> None:
+    parsed = parse_s3_config(
+        {
+            "s3": {
+                "endpoint": "https://s3.example.com",
+                "access_key_id": "ak",
+                "secret_access_key": "sk",
+                "bucket": "bucket-a",
+                "region_name": "us-east-1",
+                "addressing_style": "path",
+            }
+        }
+    )
+    assert parsed.endpoint == "https://s3.example.com"
+    assert parsed.bucket == "bucket-a"
+    assert parsed.region_name == "us-east-1"
+    assert parsed.addressing_style == "path"
+
+
+def test_parse_s3_config_rejects_invalid_addressing_style() -> None:
+    try:
+        parse_s3_config(
+            {
+                "s3": {
+                    "endpoint": "https://s3.example.com",
+                    "access_key_id": "ak",
+                    "secret_access_key": "sk",
+                    "addressing_style": "invalid",
+                }
+            }
+        )
+        assert False, "应抛出 ValueError"
+    except ValueError as error:
+        assert "addressing_style" in str(error)
+
+
+def test_parse_mongo_config_success() -> None:
+    parsed = parse_mongo_config(
+        {
+            "mongo": {
+                "uri": "mongodb://127.0.0.1:27017",
+                "db": "mydb",
+                "timeout": 5000,
+            }
+        }
+    )
+    assert parsed.uri == "mongodb://127.0.0.1:27017"
+    assert parsed.db == "mydb"
+    assert parsed.timeout == 5000
+
+
 if __name__ == "__main__":
     test_read_config_with_override_merge_rules()
     test_read_config_with_override_none_equals_read_config()
+    test_parse_redis_config_success()
+    test_parse_s3_config_success()
+    test_parse_s3_config_rejects_invalid_addressing_style()
+    test_parse_mongo_config_success()
     print("所有 config 覆盖测试通过")

@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Any, Protocol, cast
 
 from boto3 import Session
 from botocore.config import Config
 from botocore.response import StreamingBody
 
+from fyuneru.config import parse_s3_config
 from fyuneru.result import ResultE, safe
 
 if TYPE_CHECKING:
@@ -39,11 +40,12 @@ def init_client(
     secret_access_key: str,
     region_name: str | None = None,
     config: Config | None = None,
+    addressing_style: str = "virtual",
 ) -> Callable[[], S3Client]:
     if config is None:
         config = Config(
             signature_version="s3v4",
-            s3={"addressing_style": "virtual"},
+            s3=cast(Any, {"addressing_style": addressing_style}),
         )
     session: Session = Session(
         aws_access_key_id=access_key_id,
@@ -66,12 +68,13 @@ def init_client_from_config(config: dict) -> Callable[[], S3Client]:
 
     config["s3"] 必须包含 endpoint, access_key_id, secret_access_key。可选: region_name。
     """
-    s3_cfg = config["s3"]
+    s3_cfg = parse_s3_config(config)
     return init_client(
-        endpoint=s3_cfg["endpoint"],
-        access_key_id=s3_cfg["access_key_id"],
-        secret_access_key=s3_cfg["secret_access_key"],
-        region_name=s3_cfg.get("region_name"),
+        endpoint=s3_cfg.endpoint,
+        access_key_id=s3_cfg.access_key_id,
+        secret_access_key=s3_cfg.secret_access_key,
+        region_name=s3_cfg.region_name,
+        addressing_style=s3_cfg.addressing_style,
     )
 
 
@@ -85,14 +88,18 @@ def init_workspace_from_config(
     config["s3"] 必须包含 endpoint, access_key_id, secret_access_key, bucket。可选: region_name。
     返回可直接使用的 (writer, reader, deleter) 元组工厂。
     """
-    s3_cfg = config["s3"]
+    s3_cfg = parse_s3_config(config)
+    if s3_cfg.bucket is None:
+        raise KeyError("缺少字段: s3.bucket")
+
     init = init_client(
-        endpoint=s3_cfg["endpoint"],
-        access_key_id=s3_cfg["access_key_id"],
-        secret_access_key=s3_cfg["secret_access_key"],
-        region_name=s3_cfg.get("region_name"),
+        endpoint=s3_cfg.endpoint,
+        access_key_id=s3_cfg.access_key_id,
+        secret_access_key=s3_cfg.secret_access_key,
+        region_name=s3_cfg.region_name,
+        addressing_style=s3_cfg.addressing_style,
     )
-    bucket = s3_cfg["bucket"]
+    bucket = s3_cfg.bucket
 
     def create_workspace():
         client = init()
@@ -118,9 +125,10 @@ def bind_s3_reader(client: S3Client, bucket: str) -> ObjectStorageReader:
     def read_object(key: str) -> bytes:
         response = client.get_object(Bucket=bucket, Key=key)
         body: StreamingBody = response["Body"]
-        byte_s: bytes = body.read()
-        body.close()
-        return byte_s
+        try:
+            return body.read()
+        finally:
+            body.close()
 
     return read_object
 

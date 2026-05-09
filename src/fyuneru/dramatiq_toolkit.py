@@ -1,10 +1,18 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any
 
 from dramatiq.broker import Broker
 from dramatiq.message import Message
 from redis import Redis, RedisCluster
+
+
+@dataclass(frozen=True)
+class EnqueueManyResult:
+    success_count: int
+    failure_count: int
+    failures: list[tuple[int, Exception]]
 
 
 def calculate_namespace(worker: str, task: str) -> str:
@@ -42,3 +50,24 @@ def send_message(
     message: Message,
 ) -> Message:
     return broker.enqueue(message)
+
+
+def enqueue_many(
+    broker: Broker,
+    messages: list[Message],
+) -> EnqueueManyResult:
+    success_count = 0
+    failures: list[tuple[int, Exception]] = []
+
+    for index, message in enumerate(messages):
+        try:
+            send_message(broker, message)
+            success_count += 1
+        except Exception as error:
+            failures.append((index, error))
+
+    return EnqueueManyResult(
+        success_count=success_count,
+        failure_count=len(failures),
+        failures=failures,
+    )

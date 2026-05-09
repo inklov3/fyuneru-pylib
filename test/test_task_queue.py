@@ -3,7 +3,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from fyuneru.result import Failure, Success, is_failure, is_success
-from fyuneru.task_queue import actor, build_broker, calculate_namespace, new_message
+from fyuneru.task_queue import (
+    actor,
+    build_broker,
+    calculate_namespace,
+    new_message,
+    send_messages,
+)
 from fyuneru.task_queue.actor import resolve_payload_type
 from fyuneru.task_queue.worker import run_worker_once_for_test
 
@@ -432,6 +438,29 @@ def test_run_worker_returns_failure_for_invalid_message_payload() -> None:
     assert "payload 必须是对象映射" in str(result.error)
 
 
+def test_send_messages_batch_success() -> None:
+    namespace = calculate_namespace(worker="worker-j", task="etl")
+    redis_client = FakeRedisClient()
+    broker = build_broker(redis_client, namespace=namespace)
+
+    messages = [
+        new_message(
+            name="process_item",
+            queue_name="default",
+            payload=Payload(item_id="item-1", priority=1),
+        ),
+        new_message(
+            name="process_item",
+            queue_name="default",
+            payload=Payload(item_id="item-2", priority=2),
+        ),
+    ]
+
+    results = send_messages(broker, messages)
+    assert len(results) == 2
+    assert all(is_success(item) for item in results)
+
+
 if __name__ == "__main__":
     test_task_queue_send_and_consume_success_dataclass()
     test_task_queue_failure_goes_to_xq_when_no_retry()
@@ -446,4 +475,5 @@ if __name__ == "__main__":
     test_register_actor_rejects_multiple_payload_parameters()
     test_actor_rejects_negative_max_retries()
     test_run_worker_returns_failure_for_invalid_message_payload()
+    test_send_messages_batch_success()
     print("task_queue 测试通过")
