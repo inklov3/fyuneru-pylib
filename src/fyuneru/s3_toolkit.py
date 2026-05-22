@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from typing import TYPE_CHECKING, Any, Protocol, cast
 
 from boto3 import Session
@@ -20,6 +20,14 @@ class ObjectStorageWriter(Protocol):
 
 class ObjectStorageReader(Protocol):
     def __call__(self, key: str) -> ResultE[bytes]: ...
+
+
+class ObjectStorageChunkedReader(Protocol):
+    def __call__(self, key: str) -> ResultE[Iterator[bytes]]: ...
+
+
+class ObjectStorageStreamReader(Protocol):
+    def __call__(self, key: str) -> ResultE[StreamingBody]: ...
 
 
 class ObjectStorageDeleter(Protocol):
@@ -121,6 +129,12 @@ def bind_s3_writer(client: S3Client, bucket: str) -> ObjectStorageWriter:
 
 
 def bind_s3_reader(client: S3Client, bucket: str) -> ObjectStorageReader:
+    """全量读取 S3 对象到 bytes。
+
+    **警告：把整个对象读入内存**，大文件请改用 :func:`bind_s3_chunked_reader` 或
+    :func:`bind_s3_stream_reader`，否则随时会 OOM。
+    """
+
     @safe
     def read_object(key: str) -> bytes:
         response = client.get_object(Bucket=bucket, Key=key)
@@ -131,6 +145,54 @@ def bind_s3_reader(client: S3Client, bucket: str) -> ObjectStorageReader:
             body.close()
 
     return read_object
+
+
+def bind_s3_stream_reader(
+    client: S3Client, bucket: str
+) -> ObjectStorageStreamReader:
+    """以 :class:`StreamingBody` 形式返回对象，调用方负责 ``close()``。
+
+    适合需要把 body 转交给 boto3 之外的库（例如视频解码器）的场景。建议配合
+    ``with closing(body):`` 使用，避免 socket 泄漏。
+    """
+
+    @safe
+    def open_stream(key: str) -> StreamingBody:
+        response = client.get_object(Bucket=bucket, Key=key)
+        return response["Body"]
+
+    return open_stream
+
+
+def bind_s3_chunked_reader(
+    client: S3Client,
+    bucket: str,
+    chunk_size: int = 1024 * 1024,
+) -> ObjectStorageChunkedReader:
+    """按固定块大小迭代 S3 对象，迭代器消耗完毕后自动关闭底层连接。
+
+    返回的迭代器只能消费一次；遍历到末尾或显式 ``close()`` 后再次迭代会得到空序列。
+    """
+    if chunk_size <= 0:
+        raise ValueError("chunk_size 必须大于 0")
+
+    @safe
+    def open_chunks(key: str) -> Iterator[bytes]:
+        response = client.get_object(Bucket=bucket, Key=key)
+        body: StreamingBody = response["Body"]
+        return _iter_chunks(body, chunk_size)
+
+    return open_chunks
+
+
+def _iter_chunks(body: StreamingBody, chunk_size: int) -> Iterator[bytes]:
+    try:
+        for chunk in body.iter_chunks(chunk_size=chunk_size):
+            if not chunk:
+                continue
+            yield chunk
+    finally:
+        body.close()
 
 
 def bind_s3_deleter(client: S3Client, bucket: str) -> ObjectStorageDeleter:
@@ -162,7 +224,12 @@ def bind_s3_lister(client: S3Client, bucket: str) -> ObjectStorageLister:
                 keys.append(key)
             if not response.get("IsTruncated", False):
                 break
-            continuation_token = response["NextContinuationToken"]
+            continuation_token = response.get("NextContinuationToken")
+            if not continuation_token:
+                raise RuntimeError(
+                    "S3 list_objects_v2 报告 IsTruncated=True 但未返回 "
+                    f"NextContinuationToken (prefix={prefix})"
+                )
         return keys
 
     return list_objects

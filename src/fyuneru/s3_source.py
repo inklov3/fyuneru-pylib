@@ -5,6 +5,7 @@ S3 多源协议：通过 blob://桶id/key 统一访问多个 S3 源
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass, field
 from urllib.parse import urlparse
 
 from loguru import logger
@@ -64,43 +65,72 @@ def load_source_registry(
     return registry
 
 
-def bind_source_reader(
-    registry: dict[str, dict],
-) -> Callable[[str], ResultE[bytes]]:
-    """返回一个闭包函数，接受 blob:// URI，返回 ResultE[bytes]。
-    内部按需懒初始化 client + reader，缓存已创建的实例。"""
-    readers: dict[str, ObjectStorageReader] = {}
+def lookup_source(registry: dict[str, dict], bucket_id: str) -> dict:
+    """按 bucket_id 查注册表，未注册时抛 KeyError。"""
+    if bucket_id not in registry:
+        raise KeyError(f"unsupport bucket id: {bucket_id}")
+    return registry[bucket_id]
 
-    @safe
-    def parse_uri(uri: str) -> tuple[str, str]:
-        return parse_blob_uri(uri)
 
-    @safe
-    def ensure_reader(bucket_id: str) -> ObjectStorageReader:
-        if bucket_id not in registry:
-            raise KeyError(f"unsupport bucket id: {bucket_id}")
-        if bucket_id not in readers:
-            cfg = registry[bucket_id]
-            client = init_client(
-                endpoint=cfg["endpoint"],
-                access_key_id=cfg["access_key_id"],
-                secret_access_key=cfg["secret_access_key"],
-                region_name=cfg.get("region_name"),
-            )()
-            readers[bucket_id] = bind_s3_reader(client, cfg["bucket"])
-        return readers[bucket_id]
+def build_reader_for(source_cfg: dict) -> ObjectStorageReader:
+    """按单条 source 配置初始化 client 并绑定 reader。"""
+    client = init_client(
+        endpoint=source_cfg["endpoint"],
+        access_key_id=source_cfg["access_key_id"],
+        secret_access_key=source_cfg["secret_access_key"],
+        region_name=source_cfg.get("region_name"),
+    )()
+    return bind_s3_reader(client, source_cfg["bucket"])
 
-    def read(uri: str) -> ResultE[bytes]:
-        parsed_result = parse_uri(uri)
+
+@dataclass
+class MultiSourceReader:
+    """按 bucket_id 缓存 reader 的多源容器。
+
+    第一次访问某个 bucket_id 时懒初始化 client + reader，之后命中缓存。
+    """
+
+    registry: dict[str, dict]
+    _readers: dict[str, ObjectStorageReader] = field(default_factory=dict)
+
+    def reader_for(self, bucket_id: str) -> ObjectStorageReader:
+        if bucket_id not in self._readers:
+            source_cfg = lookup_source(self.registry, bucket_id)
+            self._readers[bucket_id] = build_reader_for(source_cfg)
+        return self._readers[bucket_id]
+
+    def read(self, uri: str) -> ResultE[bytes]:
+        parsed_result = _safe_parse_uri(uri)
         if isinstance(parsed_result, Failure):
             return parsed_result
 
         bucket_id, key = unwrap(parsed_result)
-        reader_result = ensure_reader(bucket_id)
+        reader_result = _safe_reader_for(self, bucket_id)
         if isinstance(reader_result, Failure):
             return reader_result
 
         reader = unwrap(reader_result)
         return reader(key)
 
-    return read
+
+@safe
+def _safe_parse_uri(uri: str) -> tuple[str, str]:
+    return parse_blob_uri(uri)
+
+
+@safe
+def _safe_reader_for(
+    multi_reader: MultiSourceReader, bucket_id: str
+) -> ObjectStorageReader:
+    return multi_reader.reader_for(bucket_id)
+
+
+def bind_source_reader(
+    registry: dict[str, dict],
+) -> Callable[[str], ResultE[bytes]]:
+    """返回一个函数：接受 blob:// URI，返回 ResultE[bytes]。
+
+    内部按需懒初始化 client + reader，缓存已创建的实例。
+    """
+    multi_reader = MultiSourceReader(registry=registry)
+    return multi_reader.read
