@@ -37,6 +37,8 @@ configure_logger(level: str = LogLevel.INFO, log_dir: Path | None = None) -> Res
 # Decorated with @safe; call unwrap(result) to raise on failure.
 # Configures loguru logger with console output + optional file output.
 # When log_dir is set, creates timestamped log file and latest.log.
+# IMPORTANT: 内部首先调用 logger.remove() 清空所有已注册 handler，
+# 重复调用会把日志通道完全重置而非叠加，调用方不要期望"再加一个 sink"语义。
 
 tqdm_loguru(iterable, level="INFO", **tqdm_kwargs) -> tqdm
 # tqdm wrapper that outputs progress via loguru instead of stderr.
@@ -75,14 +77,22 @@ parse_mongo_config(config: dict[str, Any]) -> MongoConfig
 ### converter (`fyuneru.converter`)
 
 ```python
-from fyuneru.converter import object_to_bytes, bytes_to_object, to_json_object, NonSerializable
+from fyuneru.converter import (
+    unsafe_object_to_bytes,
+    unsafe_bytes_to_object,
+    to_json_object,
+    NonSerializable,
+)
 
-object_to_bytes(data: Any) -> bytes        # pickle serialize
-bytes_to_object(data: bytes) -> Any        # pickle deserialize
+unsafe_object_to_bytes(data: Any) -> bytes        # pickle serialize
+unsafe_bytes_to_object(data: bytes) -> Any        # pickle deserialize
+# 仅用于完全可信的内部字节流。pickle.load 对外部输入等于 RCE，名字里的 unsafe_
+# 就是为了让调用方在 grep 时一眼看到风险。
 
 to_json_object(data: Any) -> Any
 # Recursively converts any object to JSON-compatible structure.
-# Handles: primitives, namedtuples, list/tuple/set, dict, objects with __dict__.
+# Handles primitives, namedtuples, list/tuple/set/frozenset, dict, objects with __dict__,
+# plus datetime/date/time (isoformat), Decimal/UUID/PurePath (str), bytes/bytearray (base64 ascii).
 # Fields with NonSerializable values are excluded.
 # Raises TypeError for unsupported types.
 ```
@@ -150,9 +160,11 @@ Requires: `fyuneru[s3]`
 
 ```python
 from fyuneru.s3_toolkit import (
+    bind_s3_chunked_reader,
     bind_s3_deleter,
     bind_s3_lister,
     bind_s3_reader,
+    bind_s3_stream_reader,
     bind_s3_writer,
     init_client,
 )
@@ -171,16 +183,37 @@ init_client(
 init_client_from_config(config: dict) -> Callable[[], S3Client]
 # Reads config["s3"]. Returns Callable[[], S3Client].
 # Raises KeyError if "s3" section missing.
+# 与 init_workspace_from_config 的差别：client 层不需要 bucket，因此本函数不会
+# 校验 s3.bucket；只在调用 init_workspace_from_config 时才强制要求 bucket。
 
 init_workspace_from_config(config: dict) -> Callable
 # Reads config["s3"] including required "bucket" field.
 # Returns Callable[[], tuple[ObjectStorageWriter, ObjectStorageReader, ObjectStorageDeleter]].
+# 必须含 s3.bucket，缺失立刻抛 KeyError。
 
 bind_s3_writer(client: S3Client, bucket: str) -> ObjectStorageWriter
 # writer(key: str, body: bytes) -> ResultE[None]  — put_object
 
 bind_s3_reader(client: S3Client, bucket: str) -> ObjectStorageReader
 # reader(key: str) -> ResultE[bytes]               — get_object
+# 警告：全量读入内存，不适合大文件，大文件请用 bind_s3_chunked_reader 或
+# bind_s3_stream_reader，否则随时会 OOM。
+
+bind_s3_chunked_reader(
+    client: S3Client,
+    bucket: str,
+    chunk_size: int = 1024 * 1024,
+) -> ObjectStorageChunkedReader
+# reader(key: str) -> ResultE[Iterator[bytes]]
+# 按 chunk_size 迭代对象内容，迭代器消费完毕或抛错时自动 close 底层 socket。
+# 返回的迭代器只能消费一次。chunk_size 必须 > 0。
+
+bind_s3_stream_reader(
+    client: S3Client, bucket: str
+) -> ObjectStorageStreamReader
+# reader(key: str) -> ResultE[StreamingBody]
+# 把 boto3 的 StreamingBody 直接交给调用方，适合需要把 body 转交给非 boto3
+# 库（视频解码器等）的场景。调用方必须配合 with closing(body): 使用，避免 socket 泄漏。
 
 bind_s3_deleter(client: S3Client, bucket: str) -> ObjectStorageDeleter
 # deleter(key: str) -> ResultE[None]               — delete_object
@@ -188,6 +221,8 @@ bind_s3_deleter(client: S3Client, bucket: str) -> ObjectStorageDeleter
 bind_s3_lister(client: S3Client, bucket: str) -> ObjectStorageLister
 # lister(prefix: str, suffix: str | None = None) -> ResultE[list[str]]
 # Auto-paginates via list_objects_v2 + ContinuationToken.
+# 若服务端返回 IsTruncated=True 但缺 NextContinuationToken，会抛 RuntimeError 并附带 prefix，
+# 防止陷入死循环。
 # Filters out directory placeholders (keys ending with "/").
 # Optional suffix filter applied client-side.
 ```
@@ -328,6 +363,7 @@ Requires: `fyuneru[pipeline]`
 
 ```python
 from fyuneru.task_queue import (
+    BrokerHooks,
     actor,
     build_broker,
     calculate_namespace,
@@ -345,17 +381,25 @@ build_broker(
     group_name: str = "default",
     claim_idle_ms: int | None = None,
     xq_stream: str | None = None,
+    xq_maxlen: int | None = None,
+    hooks: BrokerHooks | None = None,
 ) -> TaskQueueBroker
 # Builds Redis Streams based task broker.
+# xq_maxlen 设上限后，xq 流用近似 trim（XADD MAXLEN ~ N）避免无限增长。
+# hooks 注入可观测性回调；详见下方 BrokerHooks。
 
 actor(
     broker: TaskQueueBroker,
     queue_name: str = "default",
     name: str | None = None,
     max_retries: int = 0,
+    retry_backoff_ms_base: int = 1000,
+    retry_backoff_ms_max: int = 60_000,
 ) -> Callable[[TaskHandler], RegisteredActor]
 # Registers a handler and returns actor object with .send(payload).
 # Handler must declare exactly one positional payload parameter annotated as dataclass.
+# 重试 backoff 公式：min(retry_backoff_ms_base * 2 ** attempt, retry_backoff_ms_max)。
+# 重试消息写入新的 eta 字段，worker 主循环在 eta 未到时会原子地 defer（XADD 副本 + XACK 原消息）。
 
 new_message(
     name: str,
@@ -371,6 +415,9 @@ send_message(broker: TaskQueueBroker, message: TaskMessage) -> ResultE[str]
 
 send_messages(broker: TaskQueueBroker, messages: list[TaskMessage]) -> list[ResultE[str]]
 # Batch enqueue helper; returns per-message ResultE list.
+# 当 redis 客户端支持 pipeline 时，按 stream 分桶后用 pipeline 一次性提交，
+# 将 N 次 RTT 降到 stream 数量级。Cluster 模式下不同 slot 的 stream 不能进同一 pipeline，
+# 因此按 stream 分桶后再 pipeline。
 
 TaskMessage.payload uses envelope schema:
 # {
@@ -384,12 +431,44 @@ TaskQueueBroker.run_worker(
     queue_name: str = "default",
     consumer_name: str = "worker-1",
     block_ms: int = 1000,
-) -> ResultE[int]
-# Consumes and executes tasks; acks on success.
-# On failure, retries up to actor.max_retries then writes to XQ stream.
-# If claim_idle_ms is set, worker first uses XAUTOCLAIM to reclaim stale pending entries.
-# xq_stream defaults to "<namespace>:xq" and can be overridden in build_broker.
+    should_stop: Callable[[], bool] | None = None,
+) -> int
+# Consumes and executes tasks; acks on success. 返回值是本次循环已处理的消息数量
+# （执行 / 重试 / 进 xq / defer 各算一次）。
+# 单条消息异常 / Lua 失败 / Redis 抖动均被吞掉，worker 不会因此退出；
+# Redis 连接错误走指数退避（base 0.5s，max 30s）后继续。
+# should_stop 由调用方注入 SIGTERM 处理（库不夺取信号），主循环每轮入口检查一次。
+# 失败处理：actor 抛错且 attempt < max_retries 走重试（写带 eta 的副本 + ACK 原消息）；
+# 否则进 xq 流（保留 payload + error + traceback）。actor 未注册 / payload 解析失败 /
+# 字段非法的"坏消息"直接进 xq，不消耗 max_retries。
 ```
+
+**Observability hooks（`BrokerHooks`）**：注入零开销的 callback，缺省全部 None。任何 hook
+内抛错都会被 broker 吞掉并 warning，绝不会反过来杀掉 worker。
+
+```python
+from fyuneru.task_queue import BrokerHooks
+
+hooks = BrokerHooks(
+    on_enqueue=lambda queue, name, attempt: ...,                  # 入队
+    on_handle_start=lambda queue, name, attempt: ...,             # handler 开始执行
+    on_handle_success=lambda queue, name, attempt, elapsed: ...,  # 成功
+    on_handle_retry=lambda queue, name, attempt, error: ...,      # 重试
+    on_handle_xq=lambda queue, name, attempt, error: ...,         # 进 xq
+    on_lua_degraded=lambda reason: ...,                           # Lua 注册失败降级
+    on_redis_error=lambda error: ...,                             # Redis 读取异常
+)
+broker = build_broker(redis_client, namespace=..., hooks=hooks)
+```
+
+**语义保证**：fyuneru task_queue 是 **at-least-once**——handler 在 actor 异常 / Redis
+故障 / Lua 降级（非原子 xadd+xack）三种情况下都可能被重复执行。**handler 必须幂等**。
+推荐用 `fyuneru.redis_toolkit.calculate_checkpoint_key` + `bind_redis_set_reader/writer`
+做 per-payload-key 的幂等检查（jump-cut 的 `is_past_checkpoint` / `advance_checkpoint` 即是此模式）。
+
+**`attempt` 字段语义**：`max_retries=N` 表示**最多 N 次额外重试**，即一条消息总共最多被
+执行 **N + 1** 次。`attempt` 是消息进入 handler 前已经被尝试过的次数，**首次为 0**。
+进入 xq 的消息上的 `attempt` 即是失败时的 attempt 值。
 
 ### dramatiq_toolkit (`fyuneru.dramatiq_toolkit`)
 
