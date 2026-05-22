@@ -11,28 +11,57 @@ local attempt = ARGV[7]
 local error = ARGV[8]
 local traceback = ARGV[9]
 local failed_at = ARGV[10]
+local xq_maxlen = ARGV[11]
 
-local xq_stream_id = redis.call(
-    "XADD",
-    xq_stream,
-    "*",
-    "original_id",
-    original_id,
-    "queue",
-    queue_name,
-    "name",
-    name,
-    "payload",
-    payload,
-    "attempt",
-    attempt,
-    "error",
-    error,
-    "traceback",
-    traceback,
-    "failed_at",
-    failed_at
-)
+local xq_stream_id
+if xq_maxlen ~= nil and xq_maxlen ~= "" then
+    xq_stream_id = redis.call(
+        "XADD",
+        xq_stream,
+        "MAXLEN",
+        "~",
+        xq_maxlen,
+        "*",
+        "original_id",
+        original_id,
+        "queue",
+        queue_name,
+        "name",
+        name,
+        "payload",
+        payload,
+        "attempt",
+        attempt,
+        "error",
+        error,
+        "traceback",
+        traceback,
+        "failed_at",
+        failed_at
+    )
+else
+    xq_stream_id = redis.call(
+        "XADD",
+        xq_stream,
+        "*",
+        "original_id",
+        original_id,
+        "queue",
+        queue_name,
+        "name",
+        name,
+        "payload",
+        payload,
+        "attempt",
+        attempt,
+        "error",
+        error,
+        "traceback",
+        traceback,
+        "failed_at",
+        failed_at
+    )
+end
 
 redis.call("XACK", source_stream, group_name, message_id)
 

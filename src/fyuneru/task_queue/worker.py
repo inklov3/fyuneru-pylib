@@ -1,181 +1,234 @@
 from __future__ import annotations
 
-from time import time
-from typing import Any
+from collections.abc import Callable
+from time import sleep, time
+from typing import TYPE_CHECKING
 
-from fyuneru.result import ResultE, safe
-from fyuneru.task_queue.actor import build_xq_fields
-from fyuneru.task_queue.codec import (
-    decode_for_handler_payload,
-    decode_payload,
-    encode_payload,
-)
+from loguru import logger
+
+from fyuneru.task_queue.codec import decode_for_handler_payload
+from fyuneru.task_queue.protocols import Entry
+
+if TYPE_CHECKING:
+    from fyuneru.task_queue.protocols import BrokerOps
 
 
-@safe
+_REDIS_ERROR_SLEEP_BASE = 0.5
+_REDIS_ERROR_SLEEP_MAX = 30.0
+_DEFER_IDLE_SLEEP = 0.1
+
+
 def run_worker(
-    broker: Any,
+    broker: BrokerOps,
     queue_name: str = "default",
     consumer_name: str = "worker-1",
     block_ms: int = 1000,
+    should_stop: Callable[[], bool] | None = None,
 ) -> int:
+    """阻塞消费 ``queue_name`` 上的消息，直到 ``should_stop()`` 返回 True。
+
+    设计要点：
+    - **per-message 异常隔离**：handler / broker.handle_retry / broker.handle_xq_for_entry
+      自身抛错都不会让 worker 退出，仅记录日志并跳过。
+    - **Redis 连接错误隔离**：``read_entries`` 把 ConnectionError / TimeoutError
+      转成 ``ReadOutcome.redis_error``，worker 在此做指数 backoff。
+    - **graceful shutdown**：``should_stop`` 由调用方注入（库不夺取 SIGTERM）。
+
+    返回值为已成功 ACK（含 retry / xq）的消息数量。
+    """
+    stream = broker.stream_for(queue_name)
+    broker.ensure_group(stream)
+
     processed = 0
-    stream = broker._stream_name(queue_name)
-    broker._ensure_group(stream)
+    redis_error_streak = 0
 
     while True:
-        entries = _read_entries(
-            broker=broker,
+        if should_stop is not None and should_stop():
+            return processed
+
+        outcome = broker.read_entries(
             stream=stream,
+            queue_name=queue_name,
             consumer_name=consumer_name,
             block_ms=block_ms,
         )
-        if not entries:
-            continue
 
-        for message_id, fields in entries:
-            _process_message(
-                broker=broker,
-                stream=stream,
-                queue_name=queue_name,
-                message_id=message_id,
-                fields=fields,
+        if outcome.redis_error is not None:
+            sleep_seconds = min(
+                _REDIS_ERROR_SLEEP_BASE * (2**redis_error_streak),
+                _REDIS_ERROR_SLEEP_MAX,
+            )
+            redis_error_streak += 1
+            logger.warning(
+                "task_queue: Redis 读取失败，{:.1f}s 后重试: {}".format(
+                    sleep_seconds, outcome.redis_error
+                )
+            )
+            sleep(sleep_seconds)
+            continue
+        redis_error_streak = 0
+
+        deferred_only = bool(outcome.entries) and not outcome.bad_entries
+        any_executed = False
+
+        for bad in outcome.bad_entries:
+            _safely(
+                broker.handle_xq_for_bad,
+                bad,
+                description=f"handle_xq_for_bad({bad.message_id})",
             )
             processed += 1
 
-    return processed
+        for entry in outcome.entries:
+            now = time()
+            if entry.eta is not None and entry.eta > now:
+                _safely(
+                    broker.handle_defer,
+                    entry,
+                    description=f"handle_defer({entry.message_id})",
+                )
+                continue
+
+            deferred_only = False
+            _dispatch(broker, entry)
+            any_executed = True
+            processed += 1
+
+        if deferred_only and not any_executed:
+            sleep(_DEFER_IDLE_SLEEP)
 
 
-@safe
 def run_worker_once_for_test(
-    broker: Any,
+    broker: BrokerOps,
     queue_name: str = "default",
     consumer_name: str = "worker-1",
     block_ms: int = 1,
 ) -> int:
-    stream = broker._stream_name(queue_name)
-    broker._ensure_group(stream)
+    """单次循环版的 worker，仅用于测试。
 
-    entries = _read_entries(
-        broker=broker,
+    返回值含义同 ``run_worker``：本轮处理（执行 / xq / defer）的消息数量。
+    """
+    stream = broker.stream_for(queue_name)
+    broker.ensure_group(stream)
+
+    outcome = broker.read_entries(
         stream=stream,
+        queue_name=queue_name,
         consumer_name=consumer_name,
         block_ms=block_ms,
     )
-    if not entries:
+
+    if outcome.redis_error is not None:
+        logger.warning(
+            "task_queue: Redis 读取失败 (test-once): {}".format(outcome.redis_error)
+        )
         return 0
 
     processed = 0
-    for message_id, fields in entries:
-        _process_message(
-            broker=broker,
-            stream=stream,
-            queue_name=queue_name,
-            message_id=message_id,
-            fields=fields,
+    for bad in outcome.bad_entries:
+        _safely(
+            broker.handle_xq_for_bad,
+            bad,
+            description=f"handle_xq_for_bad({bad.message_id})",
         )
+        processed += 1
+
+    for entry in outcome.entries:
+        now = time()
+        if entry.eta is not None and entry.eta > now:
+            _safely(
+                broker.handle_defer,
+                entry,
+                description=f"handle_defer({entry.message_id})",
+            )
+            processed += 1
+            continue
+        _dispatch(broker, entry)
         processed += 1
     return processed
 
 
-def _read_entries(
-    broker: Any,
-    stream: str,
-    consumer_name: str,
-    block_ms: int,
-) -> list[tuple[str, dict[Any, Any]]]:
-    claimed = broker._claim_entries(stream, consumer_name)
-    if claimed:
-        return claimed
-
-    response = broker.redis_client.xreadgroup(
-        groupname=broker.group_name,
-        consumername=consumer_name,
-        streams={stream: ">"},
-        count=1,
-        block=block_ms,
-    )
-    return broker._flatten_entries(response)
-
-
-def _process_message(
-    broker: Any,
-    stream: str,
-    queue_name: str,
-    message_id: str,
-    fields: dict[Any, Any],
-) -> None:
-    normalized = broker._normalize_stream_fields(fields)
-    actor_name = normalized["name"]
-    payload_raw = normalized["payload"]
-    payload_envelope = decode_payload(payload_raw)
-    attempt = int(normalized.get("attempt", "0"))
-
-    actors = broker._actors.get(queue_name, {})
-    binding = actors.get(actor_name)
-    if binding is None:
-        raise KeyError(f"actor 未注册: {actor_name}")
-
-    handler_payload = decode_for_handler_payload(payload_envelope, binding.payload_type)
+def _dispatch(broker: BrokerOps, entry: Entry) -> None:
+    """对单条 Entry 执行 handler，并把成功 / 重试 / xq 三种路径都护好。"""
+    hooks_call(broker, "on_handle_start", entry.queue_name, entry.actor_name, entry.attempt)
 
     try:
-        binding.handler(handler_payload)
-        broker.redis_client.xack(stream, broker.group_name, message_id)
-    except Exception as error:
-        _handle_failure(
-            broker=broker,
-            binding=binding,
-            stream=stream,
-            queue_name=queue_name,
-            message_id=message_id,
-            actor_name=actor_name,
-            payload=payload_envelope,
-            attempt=attempt,
-            error=error,
+        handler_payload = decode_for_handler_payload(
+            entry.payload_envelope, entry.binding.payload_type
         )
-
-
-def _handle_failure(
-    broker: Any,
-    binding: Any,
-    stream: str,
-    queue_name: str,
-    message_id: str,
-    actor_name: str,
-    payload: dict[str, Any],
-    attempt: int,
-    error: Exception,
-) -> None:
-    payload_str = encode_payload(payload)
-
-    if attempt < binding.max_retries:
-        retry_message_id = broker._next_retry_message_id()
-        broker._retry_and_ack(
-            source_stream=stream,
-            queue_stream=broker._stream_name(queue_name),
-            group_name=broker.group_name,
-            message_id=message_id,
-            retry_id=retry_message_id,
-            name=actor_name,
-            payload=payload_str,
-            attempt=attempt + 1,
-            created_at=time(),
+    except Exception as error:
+        # payload 与 dataclass 不匹配，重试也救不了——直接进 xq。
+        _safely(
+            broker.handle_xq_for_entry,
+            entry,
+            error,
+            description=f"handle_xq_for_entry({entry.message_id}) [bad payload]",
         )
         return
 
-    xq_fields = build_xq_fields(
-        original_id=message_id,
-        queue_name=queue_name,
-        actor_name=actor_name,
-        payload=payload_str,
-        attempt=attempt,
-        error=error,
-        failed_at=time(),
+    started = time()
+    try:
+        entry.binding.handler(handler_payload)
+    except Exception as handler_error:
+        if entry.attempt < entry.binding.max_retries:
+            _safely(
+                broker.handle_retry,
+                entry,
+                handler_error,
+                description=f"handle_retry({entry.message_id})",
+            )
+            return
+        _safely(
+            broker.handle_xq_for_entry,
+            entry,
+            handler_error,
+            description=f"handle_xq_for_entry({entry.message_id})",
+        )
+        return
+
+    elapsed = time() - started
+    _safely(
+        broker.handle_success,
+        entry,
+        description=f"handle_success({entry.message_id})",
     )
-    broker._xq_and_ack(
-        source_stream=stream,
-        xq_stream=broker._xq_stream_name(),
-        group_name=broker.group_name,
-        message_id=message_id,
-        xq_fields=xq_fields,
+    hooks_call(
+        broker,
+        "on_handle_success",
+        entry.queue_name,
+        entry.actor_name,
+        entry.attempt,
+        elapsed,
     )
+
+
+def hooks_call(broker: BrokerOps, name: str, *args: object) -> None:
+    """安全触发 broker 上的可观测性 hook。
+
+    BrokerOps 协议没强制要求 ``_call_hook``，所以这里做一次防御性查找——
+    对没有 hook 的 broker 实现（比如假实现）静默忽略。
+    """
+    invoker = getattr(broker, "_call_hook", None)
+    if invoker is None:
+        return
+    try:
+        invoker(name, *args)
+    except Exception as error:
+        logger.warning(f"task_queue: hooks_call({name}) 抛错被吞掉: {error}")
+
+
+def _safely(
+    operation: Callable[..., object],
+    *args: object,
+    description: str,
+) -> None:
+    """执行 broker 写操作，吞掉所有异常并 warning。
+
+    任何对 Redis 的写操作（xack / xadd / retry / xq）都可能在 Redis 故障期间
+    抛错，但 worker 不应因此退出——失败的消息会留在 PEL 里，可由
+    claim_idle_ms + xautoclaim 救回。
+    """
+    try:
+        operation(*args)
+    except Exception as error:
+        logger.warning(f"task_queue: {description} 抛错被吞掉: {error}")
