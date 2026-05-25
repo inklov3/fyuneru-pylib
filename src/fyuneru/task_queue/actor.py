@@ -49,6 +49,7 @@ def actor(
 
     def decorator(function: TaskHandler) -> RegisteredActor:
         actor_name = function.__name__ if name is None else name
+        _validate_actor_name(actor_name)
         payload_type = resolve_payload_type(function)
         register(
             queue_name,
@@ -71,6 +72,18 @@ def actor(
         )
 
     return decorator
+
+
+# handle_xq_for_bad 在 actor_name 缺失时会回退到这个 sentinel，因此真实 actor
+# 不能与之同名，否则 xq 字段无法区分"坏消息"和正常进 xq 的 actor。
+_RESERVED_ACTOR_NAMES = frozenset({"<unknown>"})
+
+
+def _validate_actor_name(actor_name: str) -> None:
+    if not isinstance(actor_name, str) or actor_name == "":
+        raise ValueError("actor name 必须是非空字符串")
+    if actor_name in _RESERVED_ACTOR_NAMES:
+        raise ValueError(f"actor name 不能使用保留字: {actor_name}")
 
 
 def resolve_payload_type(function: TaskHandler) -> type[Any]:

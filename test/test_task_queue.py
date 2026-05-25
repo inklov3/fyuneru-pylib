@@ -869,7 +869,7 @@ def test_enqueue_many_uses_pipeline_when_available() -> None:
         def xadd(self, stream: str, fields: dict):
             self.ops.append((stream, fields))
 
-        def execute(self):
+        def execute(self, raise_on_error: bool = True):
             ids = []
             for stream, fields in self.ops:
                 ids.append(self.client.xadd(stream, fields))

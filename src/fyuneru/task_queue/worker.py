@@ -15,7 +15,10 @@ if TYPE_CHECKING:
 
 _REDIS_ERROR_SLEEP_BASE = 0.5
 _REDIS_ERROR_SLEEP_MAX = 30.0
-_DEFER_IDLE_SLEEP = 0.1
+# defer-only 批次的最大单次睡眠。睡到 min(remaining_eta, block_ms) 而不是固定 100ms，
+# 避免 "每 100ms 复制一份 + XACK" 的 hot loop。上限由 block_ms 提供，保证 should_stop
+# 在不超过 block_ms 内被回检。
+_DEFER_SLEEP_FALLBACK = 0.1
 
 
 def run_worker(
@@ -41,6 +44,7 @@ def run_worker(
 
     processed = 0
     redis_error_streak = 0
+    block_seconds = max(block_ms, 0) / 1000.0
 
     while True:
         if should_stop is not None and should_stop():
@@ -70,6 +74,7 @@ def run_worker(
 
         deferred_only = bool(outcome.entries) and not outcome.bad_entries
         any_executed = False
+        min_remaining: float | None = None
 
         for bad in outcome.bad_entries:
             _safely(
@@ -87,6 +92,9 @@ def run_worker(
                     entry,
                     description=f"handle_defer({entry.message_id})",
                 )
+                remaining = entry.eta - now
+                if min_remaining is None or remaining < min_remaining:
+                    min_remaining = remaining
                 continue
 
             deferred_only = False
@@ -95,7 +103,14 @@ def run_worker(
             processed += 1
 
         if deferred_only and not any_executed:
-            sleep(_DEFER_IDLE_SLEEP)
+            # 睡到最早 eta（或 block_ms 上限）。block_ms 充当 should_stop 的回检粒度，
+            # 同时给新消息一个进入流的窗口；min_remaining 缺省时退回到旧的 100ms。
+            if min_remaining is not None:
+                sleep_seconds = min(min_remaining, block_seconds or _DEFER_SLEEP_FALLBACK)
+            else:
+                sleep_seconds = _DEFER_SLEEP_FALLBACK
+            if sleep_seconds > 0:
+                sleep(sleep_seconds)
 
 
 def run_worker_once_for_test(
@@ -150,7 +165,9 @@ def run_worker_once_for_test(
 
 def _dispatch(broker: BrokerOps, entry: Entry) -> None:
     """对单条 Entry 执行 handler，并把成功 / 重试 / xq 三种路径都护好。"""
-    hooks_call(broker, "on_handle_start", entry.queue_name, entry.actor_name, entry.attempt)
+    broker.notify_hook(
+        "on_handle_start", entry.queue_name, entry.actor_name, entry.attempt
+    )
 
     try:
         handler_payload = decode_for_handler_payload(
@@ -192,29 +209,13 @@ def _dispatch(broker: BrokerOps, entry: Entry) -> None:
         entry,
         description=f"handle_success({entry.message_id})",
     )
-    hooks_call(
-        broker,
+    broker.notify_hook(
         "on_handle_success",
         entry.queue_name,
         entry.actor_name,
         entry.attempt,
         elapsed,
     )
-
-
-def hooks_call(broker: BrokerOps, name: str, *args: object) -> None:
-    """安全触发 broker 上的可观测性 hook。
-
-    BrokerOps 协议没强制要求 ``_call_hook``，所以这里做一次防御性查找——
-    对没有 hook 的 broker 实现（比如假实现）静默忽略。
-    """
-    invoker = getattr(broker, "_call_hook", None)
-    if invoker is None:
-        return
-    try:
-        invoker(name, *args)
-    except Exception as error:
-        logger.warning(f"task_queue: hooks_call({name}) 抛错被吞掉: {error}")
 
 
 def _safely(

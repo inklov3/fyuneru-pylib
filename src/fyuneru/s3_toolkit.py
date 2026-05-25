@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import weakref
 from collections.abc import Callable, Iterator
 from typing import TYPE_CHECKING, Any, Protocol, cast
 
@@ -172,6 +173,8 @@ def bind_s3_chunked_reader(
     """按固定块大小迭代 S3 对象，迭代器消耗完毕后自动关闭底层连接。
 
     返回的迭代器只能消费一次；遍历到末尾或显式 ``close()`` 后再次迭代会得到空序列。
+    若调用方拿到迭代器后从未启动遍历，generator finally 不会触发；这里额外挂一个
+    :func:`weakref.finalize` 作为兜底，迭代器被 GC 时也会关闭 body。
     """
     if chunk_size <= 0:
         raise ValueError("chunk_size 必须大于 0")
@@ -180,7 +183,9 @@ def bind_s3_chunked_reader(
     def open_chunks(key: str) -> Iterator[bytes]:
         response = client.get_object(Bucket=bucket, Key=key)
         body: StreamingBody = response["Body"]
-        return _iter_chunks(body, chunk_size)
+        generator = _iter_chunks(body, chunk_size)
+        weakref.finalize(generator, body.close)
+        return generator
 
     return open_chunks
 

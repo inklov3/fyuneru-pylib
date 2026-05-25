@@ -185,7 +185,7 @@ class TaskQueueBroker:
         try:
             raw = self._read_raw(stream, consumer_name, block_ms)
         except (RedisConnectionError, RedisTimeoutError) as error:
-            self._call_hook("on_redis_error", error)
+            self.notify_hook("on_redis_error", error)
             return ReadOutcome(redis_error=error)
 
         entries: list[Entry] = []
@@ -215,7 +215,7 @@ class TaskQueueBroker:
             eta=eta,
             created_at=time(),
         )
-        self._call_hook(
+        self.notify_hook(
             "on_handle_retry",
             entry.queue_name,
             entry.actor_name,
@@ -254,7 +254,7 @@ class TaskQueueBroker:
             message_id=entry.message_id,
             xq_fields=xq_fields,
         )
-        self._call_hook(
+        self.notify_hook(
             "on_handle_xq",
             entry.queue_name,
             entry.actor_name,
@@ -280,7 +280,7 @@ class TaskQueueBroker:
             message_id=bad.message_id,
             xq_fields=xq_fields,
         )
-        self._call_hook(
+        self.notify_hook(
             "on_handle_xq",
             bad.queue_name,
             bad.actor_name or "<unknown>",
@@ -328,7 +328,7 @@ class TaskQueueBroker:
             "created_at": str(time()),
         }
         message_id = self.redis_client.xadd(stream, cast(dict[Any, Any], fields))
-        self._call_hook("on_enqueue", queue_name, name, attempt)
+        self.notify_hook("on_enqueue", queue_name, name, attempt)
         return _to_text(message_id)
 
     def _enqueue_many_pipelined(
@@ -362,7 +362,10 @@ class TaskQueueBroker:
                 for index in indices:
                     _, fields = prepared[index]
                     pipeline.xadd(stream, cast(dict[Any, Any], fields))
-                raw_ids = pipeline.execute()
+                # raise_on_error=False：让单条命令的异常以 Exception 对象形式留在结果列表，
+                # 我们逐条判断；否则首个失败的命令会让整个 bucket 一起报 Failure，但
+                # 服务端可能已成功执行了前面几条 XADD。
+                raw_ids = pipeline.execute(raise_on_error=False)
             except Exception as error:
                 for index in indices:
                     if results[index] is None:
@@ -370,15 +373,21 @@ class TaskQueueBroker:
                 continue
 
             for offset, index in enumerate(indices):
+                if results[index] is not None:
+                    # 已经在 prep 阶段被标记为 Failure，不被 pipeline 的成功响应覆盖。
+                    continue
                 if offset >= len(raw_ids):
                     results[index] = Failure(
                         RuntimeError("pipeline 返回结果数量与预期不符")
                     )
                     continue
                 raw_id = raw_ids[offset]
+                if isinstance(raw_id, Exception):
+                    results[index] = Failure(raw_id)
+                    continue
                 results[index] = Success(_to_text(raw_id))
                 message = messages[index]
-                self._call_hook(
+                self.notify_hook(
                     "on_enqueue", message.queue_name, message.name, message.attempt
                 )
 
@@ -521,7 +530,11 @@ class TaskQueueBroker:
     def _calculate_eta(self, binding: ActorBinding, attempt: int) -> float:
         base_ms = binding.retry_backoff_ms_base
         max_ms = binding.retry_backoff_ms_max
-        backoff_ms = min(base_ms * (2**attempt), max_ms)
+        # attempt 来自消息字段，理论上由 worker 限制在 max_retries 范围；但消息也可能
+        # 由外部 producer 直接构造，attempt 任意大会让 2**attempt 算出 megabyte 级 bignum。
+        # 在左移前 saturating clamp 到 30——base * 2**30 ≈ 12 天，已远超任何合理 max_ms。
+        shift = max(0, min(attempt, 30))
+        backoff_ms = min(base_ms * (2**shift), max_ms)
         return time() + backoff_ms / 1000.0
 
     def _retry_and_ack(
@@ -667,9 +680,13 @@ class TaskQueueBroker:
     def _mark_lua_degraded(self, reason: str) -> None:
         self._lua_degraded = True
         logger.warning(f"task_queue: {reason}")
-        self._call_hook("on_lua_degraded", reason)
+        self.notify_hook("on_lua_degraded", reason)
 
-    def _call_hook(self, name: str, *args: Any) -> None:
+    def notify_hook(self, name: str, *args: Any) -> None:
+        """触发可观测性 hook，捕获回调抛出的异常以避免反向击穿 worker。
+
+        BrokerOps Protocol 要求这是公共方法，worker 直接调用而不靠 getattr 反射。
+        """
         callback = getattr(self.hooks, name, None)
         if callback is None:
             return

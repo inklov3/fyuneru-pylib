@@ -470,6 +470,20 @@ broker = build_broker(redis_client, namespace=..., hooks=hooks)
 执行 **N + 1** 次。`attempt` 是消息进入 handler 前已经被尝试过的次数，**首次为 0**。
 进入 xq 的消息上的 `attempt` 即是失败时的 attempt 值。
 
+**滚动发布的 schema 兼容性**：actor 未注册 / payload 与 dataclass 不匹配等"schema 错位"
+失败现在**静默进 xq**而不是杀 worker。这是必要妥协（避免一条坏消息卡死整个队列），
+但意味着滚动发布期间——producer 已升级、consumer 还是旧版——valid 消息会被旧
+worker 当成"坏消息"丢进 xq。两条防线：
+- 部署顺序：先发 consumer，再发 producer。任何向前兼容增量都安全。
+- 监控：通过 `on_handle_xq` hook 按 `error` 类型分桶——`ValueError("payload 字段
+  与 dataclass 不匹配")`、`KeyError("actor 未注册")` 等都是 schema 错位信号，应该
+  与"actor 抛错"分开告警。
+
+**defer 行为**：`eta > now` 的消息会被 broker 复制到队列尾 + ACK 原消息，worker
+轮询到时再次读到该副本即 defer 一次。worker 在"全 defer 无任何 execute"的批次后
+会睡到 `min(剩余 eta, block_ms)`，避免 hot loop；但每个 defer 仍生成一条新的流
+条目，对超长 eta + 短 block_ms 的场景，xq 流可能膨胀，**建议配合 `xq_maxlen`**。
+
 ### dramatiq_toolkit (`fyuneru.dramatiq_toolkit`)
 
 Requires: `fyuneru[pipeline]`
