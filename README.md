@@ -242,7 +242,7 @@ collection = db["items"]
 from dataclasses import dataclass
 
 from fyuneru.result import unwrap
-from fyuneru.task_queue import actor, build_broker, calculate_namespace, new_message, send_messages
+from fyuneru.task_queue import actor, build_broker, new_message
 
 
 @dataclass(frozen=True)
@@ -251,7 +251,7 @@ class Payload:
     priority: int
 
 
-namespace = calculate_namespace(worker="worker-a", task="etl")
+namespace = "worker-a:{etl}"
 broker = build_broker(redis_client, namespace=namespace)
 
 
@@ -267,8 +267,7 @@ def process_item(payload: Payload):
 
 unwrap(process_item.send(Payload(item_id="item-1", priority=3)))
 
-batch_results = send_messages(
-    broker,
+batch_results = broker.enqueue_many(
     [
         new_message(
             name="process_item",

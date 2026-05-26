@@ -8,9 +8,7 @@ from fyuneru.task_queue import (
     BrokerHooks,
     actor,
     build_broker,
-    calculate_namespace,
     new_message,
-    send_messages,
 )
 from fyuneru.task_queue.actor import resolve_payload_type
 from fyuneru.task_queue.broker import _flatten_entries
@@ -230,7 +228,7 @@ class Payload:
 
 
 def test_task_queue_send_and_consume_success_dataclass() -> None:
-    namespace = calculate_namespace(worker="worker-a", task="etl")
+    namespace = "worker-a:{etl}"
     redis_client = FakeRedisClient()
     broker = build_broker(redis_client, namespace=namespace)
 
@@ -249,7 +247,7 @@ def test_task_queue_send_and_consume_success_dataclass() -> None:
 
 
 def test_send_messages_batch_success() -> None:
-    namespace = calculate_namespace(worker="worker-j", task="etl")
+    namespace = "worker-j:{etl}"
     redis_client = FakeRedisClient()
     broker = build_broker(redis_client, namespace=namespace)
 
@@ -262,7 +260,7 @@ def test_send_messages_batch_success() -> None:
         for i in range(3)
     ]
 
-    results = send_messages(broker, messages)
+    results = broker.enqueue_many(messages)
     assert len(results) == 3
     assert all(is_success(item) for item in results)
 
@@ -273,7 +271,7 @@ def test_send_messages_batch_success() -> None:
 
 
 def test_task_queue_failure_goes_to_xq_when_no_retry() -> None:
-    namespace = calculate_namespace(worker="worker-b", task="etl")
+    namespace = "worker-b:{etl}"
     redis_client = FakeRedisClient()
     broker = build_broker(redis_client, namespace=namespace)
 
@@ -303,7 +301,7 @@ def test_task_queue_failure_goes_to_xq_when_no_retry() -> None:
 
 
 def test_task_queue_retry_uses_atomic_script_and_sets_eta() -> None:
-    namespace = calculate_namespace(worker="worker-d", task="etl")
+    namespace = "worker-d:{etl}"
     redis_client = FakeRedisClient()
     broker = build_broker(redis_client, namespace=namespace)
 
@@ -340,7 +338,7 @@ def test_task_queue_retry_uses_atomic_script_and_sets_eta() -> None:
 
 
 def test_task_queue_lua_fallback_without_register_script() -> None:
-    namespace = calculate_namespace(worker="worker-e", task="etl")
+    namespace = "worker-e:{etl}"
     redis_client = FakeRedisClient()
     redis_client.fail_register_script = True
     broker = build_broker(redis_client, namespace=namespace)
@@ -371,7 +369,7 @@ def test_task_queue_lua_fallback_without_register_script() -> None:
 
 
 def test_bad_payload_goes_to_xq_without_killing_worker() -> None:
-    namespace = calculate_namespace(worker="worker-h", task="etl")
+    namespace = "worker-h:{etl}"
     redis_client = FakeRedisClient()
     broker = build_broker(redis_client, namespace=namespace)
 
@@ -400,7 +398,7 @@ def test_bad_payload_goes_to_xq_without_killing_worker() -> None:
 
 
 def test_unknown_actor_goes_to_xq() -> None:
-    namespace = calculate_namespace(worker="worker-c", task="etl")
+    namespace = "worker-c:{etl}"
     redis_client = FakeRedisClient()
     broker = build_broker(redis_client, namespace=namespace)
 
@@ -427,7 +425,7 @@ def test_unknown_actor_goes_to_xq() -> None:
 
 
 def test_invalid_json_payload_goes_to_xq() -> None:
-    namespace = calculate_namespace(worker="worker-c2", task="etl")
+    namespace = "worker-c2:{etl}"
     redis_client = FakeRedisClient()
     broker = build_broker(redis_client, namespace=namespace)
 
@@ -451,7 +449,7 @@ def test_invalid_json_payload_goes_to_xq() -> None:
 
 
 def test_non_integer_attempt_goes_to_xq() -> None:
-    namespace = calculate_namespace(worker="worker-c3", task="etl")
+    namespace = "worker-c3:{etl}"
     redis_client = FakeRedisClient()
     broker = build_broker(redis_client, namespace=namespace)
 
@@ -476,7 +474,7 @@ def test_non_integer_attempt_goes_to_xq() -> None:
 
 def test_handler_raise_does_not_kill_worker() -> None:
     """连续两条会让 handler 抛错的消息，worker 必须都成功送到 xq。"""
-    namespace = calculate_namespace(worker="worker-k", task="etl")
+    namespace = "worker-k:{etl}"
     redis_client = FakeRedisClient()
     broker = build_broker(redis_client, namespace=namespace)
 
@@ -519,7 +517,7 @@ def test_flatten_entries_accepts_list_outer() -> None:
 
 
 def test_worker_consumes_with_list_xreadgroup_response() -> None:
-    namespace = calculate_namespace(worker="worker-listmode", task="etl")
+    namespace = "worker-listmode:{etl}"
     redis_client = FakeRedisClient()
     redis_client.xreadgroup_returns_list = True
     broker = build_broker(redis_client, namespace=namespace)
@@ -543,7 +541,7 @@ def test_worker_consumes_with_list_xreadgroup_response() -> None:
 
 
 def test_claim_entries_accepts_list_response() -> None:
-    namespace = calculate_namespace(worker="worker-f", task="etl")
+    namespace = "worker-f:{etl}"
     redis_client = FakeRedisClient()
     redis_client.autoclaim_returns_list = True
     broker = build_broker(redis_client, namespace=namespace, claim_idle_ms=500)
@@ -571,7 +569,7 @@ def test_claim_entries_accepts_list_response() -> None:
 
 
 def test_actor_send_rejects_wrong_payload_dataclass_type() -> None:
-    namespace = calculate_namespace(worker="worker-g", task="etl")
+    namespace = "worker-g:{etl}"
     redis_client = FakeRedisClient()
     broker = build_broker(redis_client, namespace=namespace)
 
@@ -629,7 +627,7 @@ def test_register_actor_rejects_multiple_payload_parameters() -> None:
 
 
 def test_actor_rejects_negative_max_retries() -> None:
-    namespace = calculate_namespace(worker="worker-i", task="etl")
+    namespace = "worker-i:{etl}"
     redis_client = FakeRedisClient()
     broker = build_broker(redis_client, namespace=namespace)
 
@@ -648,7 +646,7 @@ def test_actor_rejects_negative_max_retries() -> None:
 def test_future_eta_message_is_deferred_not_executed() -> None:
     from time import time as now_ts
 
-    namespace = calculate_namespace(worker="worker-defer", task="etl")
+    namespace = "worker-defer:{etl}"
     redis_client = FakeRedisClient()
     broker = build_broker(redis_client, namespace=namespace)
 
@@ -694,7 +692,7 @@ def test_future_eta_message_is_deferred_not_executed() -> None:
 
 
 def test_hooks_fired_on_success_path() -> None:
-    namespace = calculate_namespace(worker="worker-hooks", task="etl")
+    namespace = "worker-hooks:{etl}"
     redis_client = FakeRedisClient()
 
     starts: list[tuple[str, str, int]] = []
@@ -721,7 +719,7 @@ def test_hooks_fired_on_success_path() -> None:
 
 
 def test_hooks_fired_on_retry_and_xq() -> None:
-    namespace = calculate_namespace(worker="worker-hookr", task="etl")
+    namespace = "worker-hookr:{etl}"
     redis_client = FakeRedisClient()
 
     retries: list[tuple[str, str, int]] = []
@@ -766,7 +764,7 @@ def test_hooks_fired_on_retry_and_xq() -> None:
 
 
 def test_hook_exception_does_not_break_worker() -> None:
-    namespace = calculate_namespace(worker="worker-hbreak", task="etl")
+    namespace = "worker-hbreak:{etl}"
     redis_client = FakeRedisClient()
 
     def bad_hook(*args):
@@ -785,7 +783,7 @@ def test_hook_exception_does_not_break_worker() -> None:
 
 
 def test_lua_degraded_triggers_hook() -> None:
-    namespace = calculate_namespace(worker="worker-luah", task="etl")
+    namespace = "worker-luah:{etl}"
     redis_client = FakeRedisClient()
     redis_client.fail_register_script = True
 
@@ -806,7 +804,7 @@ def test_lua_degraded_triggers_hook() -> None:
 def test_read_entries_returns_redis_error_outcome() -> None:
     from redis.exceptions import ConnectionError as RedisConnectionError
 
-    namespace = calculate_namespace(worker="worker-conn", task="etl")
+    namespace = "worker-conn:{etl}"
     redis_client = FakeRedisClient()
     broker = build_broker(redis_client, namespace=namespace)
 
@@ -830,7 +828,7 @@ def test_read_entries_returns_redis_error_outcome() -> None:
 def test_should_stop_terminates_run_worker() -> None:
     from fyuneru.task_queue.worker import run_worker
 
-    namespace = calculate_namespace(worker="worker-stop", task="etl")
+    namespace = "worker-stop:{etl}"
     redis_client = FakeRedisClient()
     broker = build_broker(redis_client, namespace=namespace)
 
@@ -850,7 +848,7 @@ def test_should_stop_terminates_run_worker() -> None:
 
 
 def test_enqueue_many_uses_pipeline_when_available() -> None:
-    namespace = calculate_namespace(worker="worker-pipe", task="etl")
+    namespace = "worker-pipe:{etl}"
 
     class PipelineFakeRedis(FakeRedisClient):
         def __init__(self):
@@ -886,7 +884,7 @@ def test_enqueue_many_uses_pipeline_when_available() -> None:
         )
         for i in range(5)
     ]
-    results = send_messages(broker, messages)
+    results = broker.enqueue_many(messages)
     assert len(results) == 5
     assert all(is_success(item) for item in results)
     assert redis_client.pipeline_calls == 1
@@ -898,7 +896,7 @@ def test_enqueue_many_uses_pipeline_when_available() -> None:
 
 
 def test_xq_maxlen_trims_failed_messages() -> None:
-    namespace = calculate_namespace(worker="worker-maxlen", task="etl")
+    namespace = "worker-maxlen:{etl}"
     redis_client = FakeRedisClient()
     broker = build_broker(redis_client, namespace=namespace, xq_maxlen=3)
 

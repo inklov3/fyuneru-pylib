@@ -20,7 +20,7 @@ from dataclasses import dataclass
 
 from fyuneru.redis_toolkit import init_client_standalone
 from fyuneru.result import unwrap
-from fyuneru.task_queue import actor, build_broker, calculate_namespace
+from fyuneru.task_queue import actor, build_broker
 
 
 @dataclass(frozen=True)
@@ -30,7 +30,7 @@ class Payload:
 
 
 redis_client = init_client_standalone(host="localhost", port=6379, db=0)()
-namespace = calculate_namespace(worker="worker-a", task="etl")
+namespace = "worker-a:{etl}"
 broker = build_broker(
     redis_client=redis_client,
     namespace=namespace,
@@ -61,11 +61,11 @@ unwrap(
 
 核心入口：
 
-- `calculate_namespace(worker, task) -> str`
 - `build_broker(redis_client, namespace, group_name="default", claim_idle_ms=None, xq_stream=None) -> TaskQueueBroker`
 - `actor(broker, queue_name="default", name=None, max_retries=0)`
 - `new_message(name, queue_name, payload, attempt=0, eta=None) -> TaskMessage`
-- `send_message(broker, message) -> ResultE[str]`
+- `TaskQueueBroker.enqueue(message) -> str`
+- `TaskQueueBroker.enqueue_many(messages) -> list[ResultE[str]]`
 - `TaskQueueBroker.run_worker(queue_name="default", consumer_name=None, block_ms=1000) -> ResultE[int]`
   - `consumer_name=None` 时回退到环境变量 `HOSTNAME`（K8s 下即 Pod 名），都不存在再回退到 `"worker-1"`
 

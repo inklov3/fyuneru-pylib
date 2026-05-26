@@ -15,10 +15,6 @@ class EnqueueManyResult:
     failures: list[tuple[int, Exception]]
 
 
-def calculate_namespace(worker: str, task: str) -> str:
-    return f"{worker}:{{{task}}}"
-
-
 def build_broker(redis_client: Redis | RedisCluster, namespace: str) -> Broker:
     from dramatiq.brokers.redis import RedisBroker
 

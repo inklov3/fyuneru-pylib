@@ -366,14 +366,8 @@ from fyuneru.task_queue import (
     BrokerHooks,
     actor,
     build_broker,
-    calculate_namespace,
     new_message,
-    send_message,
-    send_messages,
 )
-
-calculate_namespace(worker: str, task: str) -> str
-# Returns "{worker}:{{{task}}}"
 
 build_broker(
     redis_client: Redis | RedisCluster,
@@ -410,11 +404,11 @@ new_message(
 ) -> TaskMessage
 # payload must be a dataclass instance and attempt must be >= 0.
 
-send_message(broker: TaskQueueBroker, message: TaskMessage) -> ResultE[str]
+TaskQueueBroker.enqueue(message: TaskMessage) -> str
 # Enqueues message into stream and returns message id.
 
-send_messages(broker: TaskQueueBroker, messages: list[TaskMessage]) -> list[ResultE[str]]
-# Batch enqueue helper; returns per-message ResultE list.
+TaskQueueBroker.enqueue_many(messages: list[TaskMessage]) -> list[ResultE[str]]
+# Batch enqueue; returns per-message ResultE list.
 # 当 redis 客户端支持 pipeline 时，按 stream 分桶后用 pipeline 一次性提交，
 # 将 N 次 RTT 降到 stream 数量级。Cluster 模式下不同 slot 的 stream 不能进同一 pipeline，
 # 因此按 stream 分桶后再 pipeline。

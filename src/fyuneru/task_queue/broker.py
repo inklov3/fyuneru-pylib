@@ -126,7 +126,7 @@ class TaskQueueBroker:
     def run_worker(
         self,
         queue_name: str = "default",
-        consumer_name: str = "worker-1",
+        consumer_name: str | None = None,
         block_ms: int = 1000,
         should_stop: Callable[[], bool] | None = None,
     ) -> int:
@@ -696,10 +696,6 @@ class TaskQueueBroker:
             logger.warning(f"task_queue hook {name} 抛错被吞掉: {error}")
 
 
-def calculate_namespace(worker: str, task: str) -> str:
-    return f"{worker}:{{{task}}}"
-
-
 def build_broker(
     redis_client: Redis | RedisCluster,
     namespace: str,
@@ -741,27 +737,6 @@ def new_message(
         attempt=attempt,
         eta=eta,
     )
-
-
-def send_message(
-    broker: TaskQueueBroker,
-    message: TaskMessage,
-) -> ResultE[str]:
-    return safe_send_message(
-        sender=broker._send_payload,
-        queue_name=message.queue_name,
-        name=message.name,
-        payload=message.payload,
-        attempt=message.attempt,
-        eta=message.eta,
-    )
-
-
-def send_messages(
-    broker: TaskQueueBroker,
-    messages: list[TaskMessage],
-) -> list[ResultE[str]]:
-    return broker.enqueue_many(messages)
 
 
 def actor(

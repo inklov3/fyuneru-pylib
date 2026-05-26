@@ -3,10 +3,7 @@ from fyuneru.task_queue.broker import (
     TaskQueueBroker,
     actor,
     build_broker,
-    calculate_namespace,
     new_message,
-    send_message,
-    send_messages,
 )
 from fyuneru.task_queue.protocols import (
     BadEntry,
@@ -32,9 +29,6 @@ __all__ = [
     "TaskQueueBroker",
     "actor",
     "build_broker",
-    "calculate_namespace",
     "new_message",
     "run_worker",
-    "send_message",
-    "send_messages",
 ]
