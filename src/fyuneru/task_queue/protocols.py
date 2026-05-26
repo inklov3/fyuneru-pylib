@@ -24,7 +24,6 @@ class Entry:
     stream: str
     message_id: str
     queue_name: str
-    actor_name: str
     binding: ActorBinding
     payload_envelope: dict[str, Any]
     payload_raw: str
@@ -45,7 +44,6 @@ class BadEntry:
     message_id: str
     queue_name: str
     raw_fields: dict[str, str]
-    actor_name: str | None
     payload_raw: str | None
     attempt: int
     reason: str
@@ -76,11 +74,11 @@ class BrokerHooks:
     回调内部抛错不会反过来杀 worker——broker 会捕获并 warning 一次。
     """
 
-    on_enqueue: Callable[[str, str, int], None] | None = None
-    on_handle_start: Callable[[str, str, int], None] | None = None
-    on_handle_success: Callable[[str, str, int, float], None] | None = None
-    on_handle_retry: Callable[[str, str, int, Exception], None] | None = None
-    on_handle_xq: Callable[[str, str, int, Exception], None] | None = None
+    on_enqueue: Callable[[str, int], None] | None = None
+    on_handle_start: Callable[[str, int], None] | None = None
+    on_handle_success: Callable[[str, int, float], None] | None = None
+    on_handle_retry: Callable[[str, int, Exception], None] | None = None
+    on_handle_xq: Callable[[str, int, Exception], None] | None = None
     on_lua_degraded: Callable[[str], None] | None = None
     on_redis_error: Callable[[Exception], None] | None = None
 
@@ -104,7 +102,7 @@ class BrokerOps(Protocol):
         block_ms: int,
     ) -> ReadOutcome: ...
 
-    def actor_for(self, queue_name: str, actor_name: str) -> ActorBinding | None: ...
+    def actor_for(self, queue_name: str) -> ActorBinding | None: ...
 
     def handle_success(self, entry: Entry) -> None: ...
 

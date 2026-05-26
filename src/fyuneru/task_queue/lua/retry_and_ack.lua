@@ -4,11 +4,10 @@ local queue_stream = KEYS[2]
 local group_name = ARGV[1]
 local message_id = ARGV[2]
 local retry_id = ARGV[3]
-local name = ARGV[4]
-local payload = ARGV[5]
-local attempt = ARGV[6]
-local eta = ARGV[7]
-local created_at = ARGV[8]
+local payload = ARGV[4]
+local attempt = ARGV[5]
+local eta = ARGV[6]
+local created_at = ARGV[7]
 
 local retry_stream_id = redis.call(
     "XADD",
@@ -16,8 +15,6 @@ local retry_stream_id = redis.call(
     "*",
     "id",
     retry_id,
-    "name",
-    name,
     "payload",
     payload,
     "attempt",

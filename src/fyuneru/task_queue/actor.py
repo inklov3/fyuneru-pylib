@@ -13,8 +13,7 @@ from fyuneru.task_queue.types import TaskHandler
 
 @dataclass(frozen=True)
 class RegisteredActor:
-    _sender: Callable[[str, str, dict[str, Any], int, float | None], str]
-    name: str
+    _sender: Callable[[str, dict[str, Any], int, float | None], str]
     queue_name: str
     handler: TaskHandler
     payload_type: type[Any]
@@ -28,14 +27,13 @@ class RegisteredActor:
     @safe
     def send(self, payload: Any) -> str:
         payload_envelope = normalize_payload_envelope(payload, self.payload_type)
-        return self._sender(self.queue_name, self.name, payload_envelope, 0, None)
+        return self._sender(self.queue_name, payload_envelope, 0, None)
 
 
 def actor(
     register: Callable[..., None],
-    sender: Callable[[str, str, dict[str, Any], int, float | None], str],
+    sender: Callable[[str, dict[str, Any], int, float | None], str],
     queue_name: str = "default",
-    name: str | None = None,
     max_retries: int = 0,
     retry_backoff_ms_base: int = 1000,
     retry_backoff_ms_max: int = 60_000,
@@ -48,12 +46,9 @@ def actor(
         raise ValueError("retry_backoff_ms_max 不能小于 retry_backoff_ms_base")
 
     def decorator(function: TaskHandler) -> RegisteredActor:
-        actor_name = function.__name__ if name is None else name
-        _validate_actor_name(actor_name)
         payload_type = resolve_payload_type(function)
         register(
             queue_name,
-            actor_name,
             function,
             payload_type,
             max_retries,
@@ -62,7 +57,6 @@ def actor(
         )
         return RegisteredActor(
             _sender=sender,
-            name=actor_name,
             queue_name=queue_name,
             handler=function,
             payload_type=payload_type,
@@ -72,18 +66,6 @@ def actor(
         )
 
     return decorator
-
-
-# handle_xq_for_bad 在 actor_name 缺失时会回退到这个 sentinel，因此真实 actor
-# 不能与之同名，否则 xq 字段无法区分"坏消息"和正常进 xq 的 actor。
-_RESERVED_ACTOR_NAMES = frozenset({"<unknown>"})
-
-
-def _validate_actor_name(actor_name: str) -> None:
-    if not isinstance(actor_name, str) or actor_name == "":
-        raise ValueError("actor name 必须是非空字符串")
-    if actor_name in _RESERVED_ACTOR_NAMES:
-        raise ValueError(f"actor name 不能使用保留字: {actor_name}")
 
 
 def resolve_payload_type(function: TaskHandler) -> type[Any]:
@@ -114,7 +96,6 @@ def resolve_payload_type(function: TaskHandler) -> type[Any]:
 def build_xq_fields(
     original_id: str,
     queue_name: str,
-    actor_name: str,
     payload: str,
     attempt: int,
     error: Exception,
@@ -123,7 +104,6 @@ def build_xq_fields(
     return {
         "original_id": original_id,
         "queue": queue_name,
-        "name": actor_name,
         "payload": payload,
         "attempt": str(attempt),
         "error": str(error),
@@ -138,15 +118,14 @@ def _format_exception_safely(error: Exception) -> str:
 
 
 def safe_send_message(
-    sender: Callable[[str, str, dict[str, Any], int, float | None], str],
+    sender: Callable[[str, dict[str, Any], int, float | None], str],
     queue_name: str,
-    name: str,
     payload: dict[str, Any],
     attempt: int,
     eta: float | None,
 ) -> ResultE[str]:
     @safe
     def send() -> str:
-        return sender(queue_name, name, payload, attempt, eta)
+        return sender(queue_name, payload, attempt, eta)
 
     return send()

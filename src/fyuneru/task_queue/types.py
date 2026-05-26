@@ -13,7 +13,6 @@ class TaskHandler(Protocol):
 
 
 class TaskActor(Protocol):
-    name: str
     queue_name: str
 
     def send(self, payload: Any) -> ResultE[str]: ...
@@ -42,7 +41,6 @@ class TaskMessage:
     ``attempt`` 表示**进入 handler 前已经被尝试过的次数**，首次投递为 0。
     """
 
-    name: str
     queue_name: str
     payload: dict[str, Any]
     attempt: int = 0

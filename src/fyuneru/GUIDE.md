@@ -385,18 +385,17 @@ build_broker(
 actor(
     broker: TaskQueueBroker,
     queue_name: str = "default",
-    name: str | None = None,
     max_retries: int = 0,
     retry_backoff_ms_base: int = 1000,
     retry_backoff_ms_max: int = 60_000,
 ) -> Callable[[TaskHandler], RegisteredActor]
 # Registers a handler and returns actor object with .send(payload).
 # Handler must declare exactly one positional payload parameter annotated as dataclass.
+# 一个 queue 只能注册一个 actor；重复注册立即 raise ValueError。
 # 重试 backoff 公式：min(retry_backoff_ms_base * 2 ** attempt, retry_backoff_ms_max)。
 # 重试消息写入新的 eta 字段，worker 主循环在 eta 未到时会原子地 defer（XADD 副本 + XACK 原消息）。
 
 new_message(
-    name: str,
     queue_name: str,
     payload: Any,
     attempt: int = 0,
@@ -446,13 +445,13 @@ TaskQueueBroker.run_worker(
 from fyuneru.task_queue import BrokerHooks
 
 hooks = BrokerHooks(
-    on_enqueue=lambda queue, name, attempt: ...,                  # 入队
-    on_handle_start=lambda queue, name, attempt: ...,             # handler 开始执行
-    on_handle_success=lambda queue, name, attempt, elapsed: ...,  # 成功
-    on_handle_retry=lambda queue, name, attempt, error: ...,      # 重试
-    on_handle_xq=lambda queue, name, attempt, error: ...,         # 进 xq
-    on_lua_degraded=lambda reason: ...,                           # Lua 注册失败降级
-    on_redis_error=lambda error: ...,                             # Redis 读取异常
+    on_enqueue=lambda queue, attempt: ...,                  # 入队
+    on_handle_start=lambda queue, attempt: ...,             # handler 开始执行
+    on_handle_success=lambda queue, attempt, elapsed: ...,  # 成功
+    on_handle_retry=lambda queue, attempt, error: ...,      # 重试
+    on_handle_xq=lambda queue, attempt, error: ...,         # 进 xq
+    on_lua_degraded=lambda reason: ...,                     # Lua 注册失败降级
+    on_redis_error=lambda error: ...,                       # Redis 读取异常
 )
 broker = build_broker(redis_client, namespace=..., hooks=hooks)
 ```

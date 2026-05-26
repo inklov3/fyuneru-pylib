@@ -258,7 +258,6 @@ broker = build_broker(redis_client, namespace=namespace)
 @actor(
     broker,
     queue_name="default",
-    name="process_item",
     max_retries=0,
 )
 def process_item(payload: Payload):
@@ -270,12 +269,10 @@ unwrap(process_item.send(Payload(item_id="item-1", priority=3)))
 batch_results = broker.enqueue_many(
     [
         new_message(
-            name="process_item",
             queue_name="default",
             payload=Payload(item_id="item-2", priority=1),
         ),
         new_message(
-            name="process_item",
             queue_name="default",
             payload=Payload(item_id="item-3", priority=2),
         ),

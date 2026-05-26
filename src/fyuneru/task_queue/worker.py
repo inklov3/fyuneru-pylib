@@ -185,7 +185,7 @@ def run_worker_once_for_test(
 def _dispatch(broker: BrokerOps, entry: Entry) -> None:
     """对单条 Entry 执行 handler，并把成功 / 重试 / xq 三种路径都护好。"""
     broker.notify_hook(
-        "on_handle_start", entry.queue_name, entry.actor_name, entry.attempt
+        "on_handle_start", entry.queue_name, entry.attempt
     )
 
     try:
@@ -231,7 +231,6 @@ def _dispatch(broker: BrokerOps, entry: Entry) -> None:
     broker.notify_hook(
         "on_handle_success",
         entry.queue_name,
-        entry.actor_name,
         entry.attempt,
         elapsed,
     )

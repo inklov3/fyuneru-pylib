@@ -41,7 +41,6 @@ broker = build_broker(
 @actor(
     broker,
     queue_name="default",
-    name="process_item",
     max_retries=0,
 )
 def process_item(payload: Payload):
@@ -62,8 +61,8 @@ unwrap(
 核心入口：
 
 - `build_broker(redis_client, namespace, group_name="default", claim_idle_ms=None, xq_stream=None) -> TaskQueueBroker`
-- `actor(broker, queue_name="default", name=None, max_retries=0)`
-- `new_message(name, queue_name, payload, attempt=0, eta=None) -> TaskMessage`
+- `actor(broker, queue_name="default", max_retries=0)`
+- `new_message(queue_name, payload, attempt=0, eta=None) -> TaskMessage`
 - `TaskQueueBroker.enqueue(message) -> str`
 - `TaskQueueBroker.enqueue_many(messages) -> list[ResultE[str]]`
 - `TaskQueueBroker.run_worker(queue_name="default", consumer_name=None, block_ms=1000) -> ResultE[int]`
@@ -74,7 +73,6 @@ unwrap(
 消息字段（stream entry）包含：
 
 - `id`: 业务消息 id（uuid）
-- `name`: actor 名称
 - `payload`: JSON 字符串（envelope）
 - `attempt`: 当前尝试次数
 - `eta`: 预留字段（当前不做延迟调度）

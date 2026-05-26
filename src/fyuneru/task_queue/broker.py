@@ -49,7 +49,7 @@ class TaskQueueBroker:
     xq_stream: str | None = None
     xq_maxlen: int | None = None
     hooks: BrokerHooks = field(default_factory=BrokerHooks)
-    _actors: dict[str, dict[str, ActorBinding]] = field(default_factory=dict)
+    _actors: dict[str, ActorBinding] = field(default_factory=dict)
     _group_ready_streams: set[str] = field(default_factory=set)
     _scripts: dict[str, Any] = field(default_factory=dict)
     _lua_degraded: bool = False
@@ -82,7 +82,6 @@ class TaskQueueBroker:
     def actor(
         self,
         queue_name: str = "default",
-        name: str | None = None,
         max_retries: int = 0,
         retry_backoff_ms_base: int = 1000,
         retry_backoff_ms_max: int = 60_000,
@@ -91,7 +90,6 @@ class TaskQueueBroker:
             register=self._register_actor,
             sender=self._send_payload,
             queue_name=queue_name,
-            name=name,
             max_retries=max_retries,
             retry_backoff_ms_base=retry_backoff_ms_base,
             retry_backoff_ms_max=retry_backoff_ms_max,
@@ -100,7 +98,6 @@ class TaskQueueBroker:
     def enqueue(self, message: TaskMessage) -> str:
         return self._send_payload(
             queue_name=message.queue_name,
-            name=message.name,
             payload=message.payload,
             attempt=message.attempt,
             eta=message.eta,
@@ -114,7 +111,6 @@ class TaskQueueBroker:
                 safe_send_message(
                     sender=self._send_payload,
                     queue_name=message.queue_name,
-                    name=message.name,
                     payload=message.payload,
                     attempt=message.attempt,
                     eta=message.eta,
@@ -167,8 +163,8 @@ class TaskQueueBroker:
 
         self._group_ready_streams.add(stream)
 
-    def actor_for(self, queue_name: str, actor_name: str) -> ActorBinding | None:
-        return self._actors.get(queue_name, {}).get(actor_name)
+    def actor_for(self, queue_name: str) -> ActorBinding | None:
+        return self._actors.get(queue_name)
 
     def read_entries(
         self,
@@ -209,7 +205,6 @@ class TaskQueueBroker:
             queue_stream=self.stream_for(entry.queue_name),
             message_id=entry.message_id,
             retry_id=self._next_retry_message_id(),
-            name=entry.actor_name,
             payload=entry.payload_raw,
             attempt=next_attempt,
             eta=eta,
@@ -218,7 +213,6 @@ class TaskQueueBroker:
         self.notify_hook(
             "on_handle_retry",
             entry.queue_name,
-            entry.actor_name,
             next_attempt,
             error,
         )
@@ -231,7 +225,6 @@ class TaskQueueBroker:
             queue_stream=self.stream_for(entry.queue_name),
             message_id=entry.message_id,
             defer_id=self._next_retry_message_id(),
-            name=entry.actor_name,
             payload=entry.payload_raw,
             attempt=entry.attempt,
             eta=entry.eta,
@@ -242,7 +235,6 @@ class TaskQueueBroker:
         xq_fields = build_xq_fields(
             original_id=entry.message_id,
             queue_name=entry.queue_name,
-            actor_name=entry.actor_name,
             payload=entry.payload_raw,
             attempt=entry.attempt,
             error=error,
@@ -257,7 +249,6 @@ class TaskQueueBroker:
         self.notify_hook(
             "on_handle_xq",
             entry.queue_name,
-            entry.actor_name,
             entry.attempt,
             error,
         )
@@ -266,7 +257,6 @@ class TaskQueueBroker:
         xq_fields = build_xq_fields(
             original_id=bad.message_id,
             queue_name=bad.queue_name,
-            actor_name=bad.actor_name or "<unknown>",
             payload=bad.payload_raw if bad.payload_raw is not None else "",
             attempt=bad.attempt,
             error=bad.error,
@@ -283,7 +273,6 @@ class TaskQueueBroker:
         self.notify_hook(
             "on_handle_xq",
             bad.queue_name,
-            bad.actor_name or "<unknown>",
             bad.attempt,
             bad.error,
         )
@@ -295,14 +284,15 @@ class TaskQueueBroker:
     def _register_actor(
         self,
         queue_name: str,
-        actor_name: str,
         handler: TaskHandler,
         payload_type: type[Any],
         max_retries: int,
         retry_backoff_ms_base: int,
         retry_backoff_ms_max: int,
     ) -> None:
-        self._actors.setdefault(queue_name, {})[actor_name] = ActorBinding(
+        if queue_name in self._actors:
+            raise ValueError(f"queue 已注册 actor: {queue_name}")
+        self._actors[queue_name] = ActorBinding(
             handler=handler,
             payload_type=payload_type,
             max_retries=max_retries,
@@ -313,7 +303,6 @@ class TaskQueueBroker:
     def _send_payload(
         self,
         queue_name: str,
-        name: str,
         payload: dict[str, Any],
         attempt: int,
         eta: float | None = None,
@@ -321,14 +310,13 @@ class TaskQueueBroker:
         stream = self.stream_for(queue_name)
         fields = {
             "id": self._next_retry_message_id(),
-            "name": name,
             "payload": encode_payload(payload),
             "attempt": str(attempt),
             "eta": "" if eta is None else str(eta),
             "created_at": str(time()),
         }
         message_id = self.redis_client.xadd(stream, cast(dict[Any, Any], fields))
-        self.notify_hook("on_enqueue", queue_name, name, attempt)
+        self.notify_hook("on_enqueue", queue_name, attempt)
         return _to_text(message_id)
 
     def _enqueue_many_pipelined(
@@ -344,7 +332,6 @@ class TaskQueueBroker:
                 stream = self.stream_for(message.queue_name)
                 fields = {
                     "id": self._next_retry_message_id(),
-                    "name": message.name,
                     "payload": encode_payload(message.payload),
                     "attempt": str(message.attempt),
                     "eta": "" if message.eta is None else str(message.eta),
@@ -388,7 +375,7 @@ class TaskQueueBroker:
                 results[index] = Success(_to_text(raw_id))
                 message = messages[index]
                 self.notify_hook(
-                    "on_enqueue", message.queue_name, message.name, message.attempt
+                    "on_enqueue", message.queue_name, message.attempt
                 )
 
         return results
@@ -451,19 +438,17 @@ class TaskQueueBroker:
     ) -> Entry | BadEntry:
         normalized = _normalize_stream_fields(raw_fields)
 
-        actor_name = normalized.get("name")
         payload_raw = normalized.get("payload")
-        if actor_name is None or payload_raw is None:
+        if payload_raw is None:
             return BadEntry(
                 stream=stream,
                 message_id=message_id,
                 queue_name=queue_name,
                 raw_fields=normalized,
-                actor_name=actor_name,
                 payload_raw=payload_raw,
                 attempt=_safe_int(normalized.get("attempt", "0")),
                 reason="字段缺失",
-                error=ValueError("name / payload 字段缺失"),
+                error=ValueError("payload 字段缺失"),
             )
 
         attempt_raw = normalized.get("attempt", "0")
@@ -475,7 +460,6 @@ class TaskQueueBroker:
                 message_id=message_id,
                 queue_name=queue_name,
                 raw_fields=normalized,
-                actor_name=actor_name,
                 payload_raw=payload_raw,
                 attempt=0,
                 reason="attempt 字段非整数",
@@ -493,32 +477,29 @@ class TaskQueueBroker:
                 message_id=message_id,
                 queue_name=queue_name,
                 raw_fields=normalized,
-                actor_name=actor_name,
                 payload_raw=payload_raw,
                 attempt=attempt,
                 reason="payload 解析失败",
                 error=error,
             )
 
-        binding = self.actor_for(queue_name, actor_name)
+        binding = self.actor_for(queue_name)
         if binding is None:
             return BadEntry(
                 stream=stream,
                 message_id=message_id,
                 queue_name=queue_name,
                 raw_fields=normalized,
-                actor_name=actor_name,
                 payload_raw=payload_raw,
                 attempt=attempt,
-                reason="actor 未注册",
-                error=KeyError(f"actor 未注册: {actor_name}"),
+                reason="queue 未注册 actor",
+                error=KeyError(f"queue 未注册 actor: {queue_name}"),
             )
 
         return Entry(
             stream=stream,
             message_id=message_id,
             queue_name=queue_name,
-            actor_name=actor_name,
             binding=binding,
             payload_envelope=payload_envelope,
             payload_raw=payload_raw,
@@ -543,7 +524,6 @@ class TaskQueueBroker:
         queue_stream: str,
         message_id: str,
         retry_id: str,
-        name: str,
         payload: str,
         attempt: int,
         eta: float,
@@ -558,7 +538,6 @@ class TaskQueueBroker:
                     self.group_name,
                     message_id,
                     retry_id,
-                    name,
                     payload,
                     str(attempt),
                     eta_text,
@@ -573,7 +552,6 @@ class TaskQueueBroker:
                 dict[Any, Any],
                 {
                     "id": retry_id,
-                    "name": name,
                     "payload": payload,
                     "attempt": str(attempt),
                     "eta": eta_text,
@@ -590,7 +568,6 @@ class TaskQueueBroker:
         queue_stream: str,
         message_id: str,
         defer_id: str,
-        name: str,
         payload: str,
         attempt: int,
         eta: float,
@@ -605,7 +582,6 @@ class TaskQueueBroker:
                     self.group_name,
                     message_id,
                     defer_id,
-                    name,
                     payload,
                     str(attempt),
                     eta_text,
@@ -620,7 +596,6 @@ class TaskQueueBroker:
                 dict[Any, Any],
                 {
                     "id": defer_id,
-                    "name": name,
                     "payload": payload,
                     "attempt": str(attempt),
                     "eta": eta_text,
@@ -649,7 +624,6 @@ class TaskQueueBroker:
                     message_id,
                     xq_fields["original_id"],
                     xq_fields["queue"],
-                    xq_fields["name"],
                     xq_fields["payload"],
                     xq_fields["attempt"],
                     xq_fields["error"],
@@ -720,7 +694,6 @@ def build_broker(
 
 
 def new_message(
-    name: str,
     queue_name: str,
     payload: Any,
     attempt: int = 0,
@@ -731,7 +704,6 @@ def new_message(
 
     normalized_payload = normalize_payload_envelope(payload, type(payload))
     return TaskMessage(
-        name=name,
         queue_name=queue_name,
         payload=normalized_payload,
         attempt=attempt,
@@ -742,14 +714,12 @@ def new_message(
 def actor(
     broker: TaskQueueBroker,
     queue_name: str = "default",
-    name: str | None = None,
     max_retries: int = 0,
     retry_backoff_ms_base: int = 1000,
     retry_backoff_ms_max: int = 60_000,
 ) -> Callable[[TaskHandler], RegisteredActor]:
     return broker.actor(
         queue_name=queue_name,
-        name=name,
         max_retries=max_retries,
         retry_backoff_ms_base=retry_backoff_ms_base,
         retry_backoff_ms_max=retry_backoff_ms_max,

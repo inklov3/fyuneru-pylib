@@ -5,13 +5,12 @@ local group_name = ARGV[1]
 local message_id = ARGV[2]
 local original_id = ARGV[3]
 local queue_name = ARGV[4]
-local name = ARGV[5]
-local payload = ARGV[6]
-local attempt = ARGV[7]
-local error = ARGV[8]
-local traceback = ARGV[9]
-local failed_at = ARGV[10]
-local xq_maxlen = ARGV[11]
+local payload = ARGV[5]
+local attempt = ARGV[6]
+local error = ARGV[7]
+local traceback = ARGV[8]
+local failed_at = ARGV[9]
+local xq_maxlen = ARGV[10]
 
 local xq_stream_id
 if xq_maxlen ~= nil and xq_maxlen ~= "" then
@@ -26,8 +25,6 @@ if xq_maxlen ~= nil and xq_maxlen ~= "" then
         original_id,
         "queue",
         queue_name,
-        "name",
-        name,
         "payload",
         payload,
         "attempt",
@@ -48,8 +45,6 @@ else
         original_id,
         "queue",
         queue_name,
-        "name",
-        name,
         "payload",
         payload,
         "attempt",
