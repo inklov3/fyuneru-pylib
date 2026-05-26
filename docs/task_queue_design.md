@@ -52,7 +52,6 @@ unwrap(process_item.send(Payload(item_id="item-1", priority=3)))
 unwrap(
     broker.run_worker(
         queue_name="default",
-        consumer_name="worker-1",
         block_ms=1000,
     )
 )
@@ -67,7 +66,8 @@ unwrap(
 - `actor(broker, queue_name="default", name=None, max_retries=0)`
 - `new_message(name, queue_name, payload, attempt=0, eta=None) -> TaskMessage`
 - `send_message(broker, message) -> ResultE[str]`
-- `TaskQueueBroker.run_worker(queue_name="default", consumer_name="worker-1", block_ms=1000) -> ResultE[int]`
+- `TaskQueueBroker.run_worker(queue_name="default", consumer_name=None, block_ms=1000) -> ResultE[int]`
+  - `consumer_name=None` 时回退到环境变量 `HOSTNAME`（K8s 下即 Pod 名），都不存在再回退到 `"worker-1"`
 
 ## 4. 消息模型
 

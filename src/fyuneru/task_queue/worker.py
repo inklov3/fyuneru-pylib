@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from collections.abc import Callable
 from time import sleep, time
 from typing import TYPE_CHECKING
@@ -21,10 +22,22 @@ _REDIS_ERROR_SLEEP_MAX = 30.0
 _DEFER_SLEEP_FALLBACK = 0.1
 
 
+def _default_consumer_name() -> str:
+    """未显式指定 consumer_name 时的回退策略。
+
+    K8s 下注入的 HOSTNAME 即 Pod 名（如 ``task-worker-7d9f8b-x4k2p``），
+    本地裸跑时为机器主机名。两种场景都自然唯一，且 ``XINFO CONSUMERS``
+    里直接可读，免去手动传 ``--consumer "$(POD_NAME)"`` 的负担。
+    缺省（极端裸环境）才退回到固定 ``worker-1``。
+    """
+    hostname = os.environ.get("HOSTNAME", "").strip()
+    return hostname or "worker-1"
+
+
 def run_worker(
     broker: BrokerOps,
     queue_name: str = "default",
-    consumer_name: str = "worker-1",
+    consumer_name: str | None = None,
     block_ms: int = 1000,
     should_stop: Callable[[], bool] | None = None,
 ) -> int:
@@ -39,6 +52,9 @@ def run_worker(
 
     返回值为已成功 ACK（含 retry / xq）的消息数量。
     """
+    if consumer_name is None:
+        consumer_name = _default_consumer_name()
+
     stream = broker.stream_for(queue_name)
     broker.ensure_group(stream)
 
@@ -116,13 +132,16 @@ def run_worker(
 def run_worker_once_for_test(
     broker: BrokerOps,
     queue_name: str = "default",
-    consumer_name: str = "worker-1",
+    consumer_name: str | None = None,
     block_ms: int = 1,
 ) -> int:
     """单次循环版的 worker，仅用于测试。
 
     返回值含义同 ``run_worker``：本轮处理（执行 / xq / defer）的消息数量。
     """
+    if consumer_name is None:
+        consumer_name = _default_consumer_name()
+
     stream = broker.stream_for(queue_name)
     broker.ensure_group(stream)
 

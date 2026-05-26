@@ -288,7 +288,6 @@ for result in batch_results:
 unwrap(
     broker.run_worker(
         queue_name="default",
-        consumer_name="worker-1",
         block_ms=1000,
     )
 )
