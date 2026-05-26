@@ -413,7 +413,7 @@ class TaskQueueBroker:
                 raw_fields=normalized,
                 payload_raw=payload_raw,
                 reason="queue 未注册 actor",
-                error=KeyError(f"queue 未注册 actor: {queue_name}"),
+                error=KeyError(queue_name),
             )
 
         return Entry(
