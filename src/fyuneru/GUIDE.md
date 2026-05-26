@@ -423,7 +423,7 @@ TaskQueueBroker.run_worker(
 # （执行 / 进 xq 各算一次）。
 # consumer_name=None 时回退到环境变量 HOSTNAME（K8s 下即 Pod 名），
 # 都不存在再回退到 "worker-1"。
-# 单条消息异常 / Lua 失败 / Redis 抖动均被吞掉，worker 不会因此退出；
+# 单条消息异常 / Redis 抖动均被吞掉，worker 不会因此退出；
 # Redis 连接错误走指数退避（base 0.5s，max 30s）后继续。
 # should_stop 由调用方注入 SIGTERM 处理（库不夺取信号），主循环每轮入口检查一次。
 # 失败处理：handler 抛错 / payload 校验失败 / actor 未注册 → 一律进 xq（无内置重试）。
@@ -440,14 +440,13 @@ hooks = BrokerHooks(
     on_handle_start=lambda queue: ...,             # handler 开始执行
     on_handle_success=lambda queue, elapsed: ...,  # 成功
     on_handle_xq=lambda queue, error: ...,         # 进 xq
-    on_lua_degraded=lambda reason: ...,            # Lua 注册失败降级
     on_redis_error=lambda error: ...,              # Redis 读取异常
 )
 broker = build_broker(redis_client, namespace=..., hooks=hooks)
 ```
 
 **语义保证**：fyuneru task_queue 是 **at-least-once**——handler 在 actor 异常 / Redis
-故障 / Lua 降级（非原子 xadd+xack）三种情况下都可能被重复执行。**handler 必须幂等**。
+故障两种情况下都可能被重复执行。**handler 必须幂等**。
 推荐用 `fyuneru.redis_toolkit.calculate_checkpoint_key` + `bind_redis_set_reader/writer`
 做 per-payload-key 的幂等检查（jump-cut 的 `is_past_checkpoint` / `advance_checkpoint` 即是此模式）。
 

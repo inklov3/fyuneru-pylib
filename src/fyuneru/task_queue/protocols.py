@@ -4,7 +4,7 @@
 - broker 把"从 redis 流读到的一批原始字段"统一解析为 ``Entry``（可投递）或
   ``BadEntry``（坏消息）两类显式类型，worker 不再触碰原始 fields。
 - worker 只依赖 ``BrokerOps`` Protocol，不再使用 broker 的私有方法；
-  这样 broker 内部 isinstance 兼容、字段归一化、JSON 解码、actor 解析
+  这样 broker 内部字段归一化、JSON 解码、actor 解析
   等逻辑都收敛在一处，worker 主循环只剩"分发 + 错误边界"。
 """
 
@@ -75,7 +75,6 @@ class BrokerHooks:
     on_handle_start: Callable[[str], None] | None = None
     on_handle_success: Callable[[str, float], None] | None = None
     on_handle_xq: Callable[[str, Exception], None] | None = None
-    on_lua_degraded: Callable[[str], None] | None = None
     on_redis_error: Callable[[Exception], None] | None = None
 
 

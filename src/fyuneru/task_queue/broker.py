@@ -52,28 +52,16 @@ class TaskQueueBroker:
     _actors: dict[str, ActorBinding] = field(default_factory=dict)
     _group_ready_streams: set[str] = field(default_factory=set)
     _scripts: dict[str, Any] = field(default_factory=dict)
-    _lua_degraded: bool = False
 
     def __post_init__(self) -> None:
         if self.xq_maxlen is not None and self.xq_maxlen <= 0:
             raise ValueError("xq_maxlen 必须大于 0")
 
-        if not hasattr(self.redis_client, "register_script"):
-            self._scripts = {}
-            self._mark_lua_degraded("redis client 不支持 register_script")
-            return
-
-        try:
-            register_script = cast(Any, self.redis_client).register_script
-            self._scripts = {
-                name: register_script(script)
-                for name, script in load_lua_scripts().items()
-            }
-        except Exception as error:
-            self._scripts = {}
-            self._mark_lua_degraded(
-                f"Lua 脚本注册失败，降级为非原子 xadd+xack ({error})"
-            )
+        register_script = cast(Any, self.redis_client).register_script
+        self._scripts = {
+            name: register_script(script)
+            for name, script in load_lua_scripts().items()
+        }
 
     # ------------------------------------------------------------------
     # 公开装饰器 / 入队 API
@@ -388,7 +376,6 @@ class TaskQueueBroker:
                 error=ValueError("payload 字段缺失"),
             )
 
-        # attempt / eta 字段被静默忽略，兼容旧版 producer 写入的消息
         created_at = _safe_float(normalized.get("created_at", "0"))
 
         try:
@@ -435,45 +422,25 @@ class TaskQueueBroker:
     ) -> str:
         xq_stream = self.xq_stream_for()
         maxlen_arg = "" if self.xq_maxlen is None else str(self.xq_maxlen)
-        script = self._scripts.get("xq_and_ack")
-        if script is not None:
-            xq_stream_id = script(
-                keys=[source_stream, xq_stream],
-                args=[
-                    group_name,
-                    message_id,
-                    xq_fields["original_id"],
-                    xq_fields["queue"],
-                    xq_fields["payload"],
-                    xq_fields["error"],
-                    xq_fields["traceback"],
-                    xq_fields["failed_at"],
-                    maxlen_arg,
-                ],
-            )
-            return _to_text(xq_stream_id)
-
-        if self.xq_maxlen is None:
-            xq_stream_id = self.redis_client.xadd(
-                xq_stream, cast(dict[Any, Any], xq_fields)
-            )
-        else:
-            xq_stream_id = self.redis_client.xadd(
-                xq_stream,
-                cast(dict[Any, Any], xq_fields),
-                maxlen=self.xq_maxlen,
-                approximate=True,
-            )
-        self.redis_client.xack(source_stream, group_name, message_id)
+        script = self._scripts["xq_and_ack"]
+        xq_stream_id = script(
+            keys=[source_stream, xq_stream],
+            args=[
+                group_name,
+                message_id,
+                xq_fields["original_id"],
+                xq_fields["queue"],
+                xq_fields["payload"],
+                xq_fields["error"],
+                xq_fields["traceback"],
+                xq_fields["failed_at"],
+                maxlen_arg,
+            ],
+        )
         return _to_text(xq_stream_id)
 
     def _next_retry_message_id(self) -> str:
         return str(uuid4())
-
-    def _mark_lua_degraded(self, reason: str) -> None:
-        self._lua_degraded = True
-        logger.warning(f"task_queue: {reason}")
-        self.notify_hook("on_lua_degraded", reason)
 
     def notify_hook(self, name: str, *args: Any) -> None:
         """触发可观测性 hook，捕获回调抛出的异常以避免反向击穿 worker。
@@ -538,16 +505,12 @@ def actor(
 
 
 def _flatten_entries(response: Any) -> list[tuple[str, dict[Any, Any]]]:
-    """把 xreadgroup 的返回值压平成 [(message_id, fields), ...]。
-
-    兼容 redis-py < 5（外层 tuple）与 redis-py >= 5（外层 list）。
-    """
     entries: list[tuple[str, dict[Any, Any]]] = []
     if not isinstance(response, list):
         return entries
 
     for stream_entries in response:
-        if not isinstance(stream_entries, (list, tuple)):
+        if not isinstance(stream_entries, list):
             continue
         if len(stream_entries) != 2:
             continue

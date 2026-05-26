@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-05-26 (2)
+
+### 重构（破坏性）
+
+- **`task_queue`** — 移除所有向后兼容路径，明确要求 redis-py >= 5
+  - 删除 Lua 脚本注册失败时的非原子 fallback（`xadd + xack` 两步降级路径）
+  - 删除对旧版消息 `attempt`/`eta` 字段的静默忽略兼容
+  - `_flatten_entries` 不再兼容 redis-py < 5 的 tuple 外层返回格式，仅支持 list
+
+#### BREAKING CHANGES
+
+- `BrokerHooks`：删除 `on_lua_degraded` hook
+- `TaskQueueBroker`：删除 `_lua_degraded` 字段；`build_broker` 若 Lua 脚本注册失败现在直接抛异常
+
 ## 2026-05-26
 
 ### 重构（破坏性）
