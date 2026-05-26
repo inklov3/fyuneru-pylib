@@ -41,7 +41,6 @@ broker = build_broker(
 @actor(
     broker,
     queue_name="default",
-    max_retries=0,
 )
 def process_item(payload: Payload):
     print(payload.item_id, payload.priority)
@@ -61,8 +60,8 @@ unwrap(
 核心入口：
 
 - `build_broker(redis_client, namespace, group_name="default", claim_idle_ms=None, xq_stream=None) -> TaskQueueBroker`
-- `actor(broker, queue_name="default", max_retries=0)`
-- `new_message(queue_name, payload, attempt=0, eta=None) -> TaskMessage`
+- `actor(broker, queue_name="default")`
+- `new_message(queue_name, payload) -> TaskMessage`
 - `TaskQueueBroker.enqueue(message) -> str`
 - `TaskQueueBroker.enqueue_many(messages) -> list[ResultE[str]]`
 - `TaskQueueBroker.run_worker(queue_name="default", consumer_name=None, block_ms=1000) -> ResultE[int]`
@@ -74,8 +73,6 @@ unwrap(
 
 - `id`: 业务消息 id（uuid）
 - `payload`: JSON 字符串（envelope）
-- `attempt`: 当前尝试次数
-- `eta`: 预留字段（当前不做延迟调度）
 - `created_at`: 生产时间戳
 
 ### payload envelope
@@ -114,28 +111,27 @@ unwrap(
 
 - 消费：`XREADGROUP`
 - 成功：执行 handler 后 `XACK`
-- 失败：
-  - `attempt < actor.max_retries`：重试并 ACK 原消息
-  - 否则写入 XQ 并 ACK 原消息
+- 失败（handler 抛错 / payload 校验失败 / actor 未注册）：写入 XQ 并 ACK 原消息，**无内置重试**
+
+需要重试的逻辑由 handler 自行实现，或由上层编排层负责。
 
 默认配置：
 
-- `actor.max_retries=0`：失败直接进 XQ
 - `claim_idle_ms=None`：不做超时消息接管；设置后会先执行 `XAUTOCLAIM` 接管超过空闲阈值的 pending 消息
 - `xq_stream=None`：使用默认死信流名
 
 XQ 默认流名：`<namespace>:xq`，也可通过 `build_broker(..., xq_stream="...")` 覆盖。
 
+XQ entry 字段：`original_id`, `queue`, `payload`, `error`, `traceback`, `failed_at`。
+
 ## 7. 原子性策略（最小 Lua）
 
-为避免边界不一致（如“已 ACK 但未重投/未入 XQ”），关键迁移使用 Lua 原子脚本：
+为避免边界不一致（如”已 ACK 但未入 XQ”），关键迁移使用 Lua 原子脚本：
 
-- `retry_and_ack.lua`
-  - 同一脚本内完成：`XADD(重试流)` + `XACK(原消息)`
 - `xq_and_ack.lua`
   - 同一脚本内完成：`XADD(XQ)` + `XACK(原消息)`
 
-这是一种“最小原子化”方案：
+这是一种”最小原子化”方案：
 
 - 覆盖最容易造成真实丢消息的关键边界
 - 保持整体实现可维护，不把全链路都塞进单个巨型脚本

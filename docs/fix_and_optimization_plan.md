@@ -54,15 +54,9 @@
   3. `xautoclaim` 退避：连续 N 轮没有可 claim 的就把 claim 间隔翻倍（cap 30s），有新条目时重置。
 - **测试**：mock `read_entries` 抛 `ConnectionError`，断言 worker sleep 后继续；`should_stop=lambda: True` 时主循环立刻返回。
 
-### R-4 重试加 backoff，让 `eta` 真正生效
+### R-4 ~~重试加 backoff，让 `eta` 真正生效~~ (**已废弃**：v0.2 移除 retry/eta 机制)
 
-- **位置**：`src/fyuneru/task_queue/worker.py:151-164`、`broker.py:147`、新增 `lua/defer_and_ack.lua`
-- **现状**：`eta` 字段写进 payload 但**从未被主循环读取**；`_retry_and_ack` 写死 `eta=""`。下游被打挂时立刻无限重试，thundering herd。
-- **改法**：
-  1. `ActorBinding` 新增 `retry_backoff_ms_base: int = 1000`、`retry_backoff_ms_max: int = 60_000`，`actor()` 装饰器透传。
-  2. `broker.retry(entry, attempt, error)` 内计算 `eta = now + min(base * 2 ** attempt, max)`，**Lua 路径**优先（原子 xadd + xack，已有 `retry_and_ack.lua`）。
-  3. 主循环在 `_dispatch` 入口判 `entry.eta`：若 `eta > now`，调用 `broker.defer(entry)` —— Lua 实现为"xadd 一个新副本 + xack 原"，无 Lua 则降级为非原子两步。**取舍**：完整 delayed queue 需要 ZSET + 调度线程，与现有"流即队列"模型不一致；副本重投会在 backoff 周期内被反复 read→eta 检查→再投，但 retry 是低频路径，可接受。
-- **测试**：actor 始终抛错、`max_retries=3`、`retry_backoff_ms_base=10`，跑多轮断言 `eta` 在消息字段上指数递增，到 attempt=3 后进 xq。
+eta 延迟调度与 attempt/retry 自维护重试已在 2026-05-26 版本彻底移除，改为纯"至少一次消费 + 死信流"语义。handler 抛错直接进 XQ，无内置重试。详见 CHANGELOG.md 2026-05-26 条目。
 
 ### R-5 `bind_source_reader` 闭包拆分
 
@@ -99,11 +93,10 @@
 - **位置**：`broker.py`、`worker.py`，与 R-1 的 `BrokerOps` 一起设计
 - **改法**：`TaskQueueBroker` 接受一组可选 callback（缺省 None，零开销）：
   ```python
-  on_enqueue:          (queue, name, attempt) -> None
-  on_handle_start:     (queue, name, attempt) -> None
-  on_handle_success:   (queue, name, attempt, elapsed) -> None
-  on_handle_retry:     (queue, name, attempt, error) -> None
-  on_handle_xq:        (queue, name, attempt, error) -> None
+  on_enqueue:          (queue) -> None
+  on_handle_start:     (queue) -> None
+  on_handle_success:   (queue, elapsed) -> None
+  on_handle_xq:        (queue, error) -> None
   on_lua_degraded:     (reason: str) -> None
   on_redis_error:      (error) -> None
   ```
@@ -136,9 +129,7 @@
 
 `src/fyuneru/GUIDE.md` task_queue 段新增"语义保证"小节：fyuneru task_queue 是 at-least-once，handler 在异常 / Redis 故障 / Lua 降级三种情况下可能被重复执行。推荐用 `redis_toolkit.calculate_checkpoint_key` + `bind_redis_set_reader/writer` 做 per-payload-key 幂等检查（jump-cut 现成的 `is_past_checkpoint` / `advance_checkpoint` 就是这种模式）。
 
-### F-3 `attempt` 字段语义文档化
-
-字段名不动（成本 / 收益不划算），在 `TaskMessage.attempt`、`RegisteredActor.send`、GUIDE.md 各加一处 docstring：`max_retries=N` 表示**最多 N 次额外重试**，总共最多被执行 N+1 次；`attempt` 是消息进入 handler 前已经被尝试过的次数，首次为 0。
+### F-3 ~~`attempt` 字段语义文档化~~ (**已废弃**：attempt 字段已随 retry/eta 机制一并移除)
 
 ### F-4 `configure_logger` 文档幂等性
 
@@ -173,7 +164,7 @@ R-1 合并并发 0.2 后，jump-cut 一次性升级：删除 `_fyuneru_patch.py`
 1. **R-1**：定义 `BrokerOps` Protocol + `Entry` 数据类型 + 重写 `read_entries`。 _flatten_entries bug 在此消失，jump-cut 可删补丁。
 2. **R-2**：在 R-1 的基础上重写 worker 主循环，加错误边界。
 3. **R-3**：Redis 连接错误隔离 + graceful shutdown，依赖 R-1 的 hook 位。
-4. **R-4**：backoff + eta。
+4. **R-4**：~~backoff + eta~~（已废弃，见 R-4 节）。
 5. **R-5 / R-6 / R-7**：彼此独立，可并行。
 6. **O-1 ~ O-4**：在 R 系列稳定后逐项落地，O-1 与 R-1/R-2 联调最自然，可考虑随 R-2 一起做。
 7. **F-1 ~ F-5**：最后清扫。

@@ -21,54 +21,6 @@ class FakeScript:
         self.script_name = script_name
 
     def __call__(self, keys: list[str], args: list[str]):
-        if self.script_name == "retry_and_ack":
-            source_stream, queue_stream = keys
-            (
-                group_name,
-                message_id,
-                retry_id,
-                payload,
-                attempt,
-                eta,
-                created_at,
-            ) = args
-            retry_stream_id = self.client.xadd(
-                queue_stream,
-                {
-                    "id": retry_id,
-                    "payload": payload,
-                    "attempt": attempt,
-                    "eta": eta,
-                    "created_at": created_at,
-                },
-            )
-            self.client.xack(source_stream, group_name, message_id)
-            return retry_stream_id
-
-        if self.script_name == "defer_and_ack":
-            source_stream, queue_stream = keys
-            (
-                group_name,
-                message_id,
-                defer_id,
-                payload,
-                attempt,
-                eta,
-                created_at,
-            ) = args
-            defer_stream_id = self.client.xadd(
-                queue_stream,
-                {
-                    "id": defer_id,
-                    "payload": payload,
-                    "attempt": attempt,
-                    "eta": eta,
-                    "created_at": created_at,
-                },
-            )
-            self.client.xack(source_stream, group_name, message_id)
-            return defer_stream_id
-
         if self.script_name == "xq_and_ack":
             source_stream, xq_stream = keys
             (
@@ -77,7 +29,6 @@ class FakeScript:
                 original_id,
                 queue_name,
                 payload,
-                attempt,
                 error,
                 traceback,
                 failed_at,
@@ -87,7 +38,6 @@ class FakeScript:
                 "original_id": original_id,
                 "queue": queue_name,
                 "payload": payload,
-                "attempt": attempt,
                 "error": error,
                 "traceback": traceback,
                 "failed_at": failed_at,
@@ -119,10 +69,6 @@ class FakeRedisClient:
     def register_script(self, script: str) -> FakeScript:
         if self.fail_register_script:
             raise RuntimeError("register_script failed")
-        if "retry_stream_id" in script:
-            return FakeScript(self, "retry_and_ack")
-        if "defer_stream_id" in script:
-            return FakeScript(self, "defer_and_ack")
         if "xq_stream_id" in script:
             return FakeScript(self, "xq_and_ack")
         raise ValueError("unknown script content")
@@ -288,43 +234,8 @@ def test_task_queue_failure_goes_to_xq_when_no_retry() -> None:
     assert len(xq_entries) == 1
     xq_fields = xq_entries[0][1]
     assert "name" not in xq_fields
-    assert xq_fields["attempt"] == "0"
+    assert "attempt" not in xq_fields
     assert xq_fields["original_id"] == "1-0"
-
-
-def test_task_queue_retry_uses_atomic_script_and_sets_eta() -> None:
-    namespace = "worker-d:{etl}"
-    redis_client = FakeRedisClient()
-    broker = build_broker(redis_client, namespace=namespace)
-
-    @actor(
-        broker,
-        queue_name="default",
-        max_retries=1,
-        retry_backoff_ms_base=100,
-    )
-    def fail_once(payload: Payload) -> None:
-        _ = payload
-        raise RuntimeError("retry")
-
-    broker.enqueue(
-        new_message(
-            queue_name="default",
-            payload=Payload(item_id="item-3", priority=2),
-        )
-    )
-    processed = run_worker_once_for_test(broker, queue_name="default")
-    assert processed == 1
-
-    stream = f"{namespace}:default"
-    entries = redis_client.stream_entries[stream]
-    assert len(entries) == 2
-    retried_fields = entries[1][1]
-    assert retried_fields["attempt"] == "1"
-    assert "name" not in retried_fields
-    # eta 必须是合法 float（backoff 已生效），原始消息字段 eta 是 ""
-    assert retried_fields["eta"] != ""
-    assert float(retried_fields["eta"]) > 0
 
 
 def test_task_queue_lua_fallback_without_register_script() -> None:
@@ -349,7 +260,9 @@ def test_task_queue_lua_fallback_without_register_script() -> None:
     assert processed == 1
 
     xq_stream = f"{namespace}:xq"
-    assert len(redis_client.stream_entries.get(xq_stream, [])) == 1
+    xq_entries = redis_client.stream_entries.get(xq_stream, [])
+    assert len(xq_entries) == 1
+    assert "attempt" not in xq_entries[0][1]
 
 
 # ----------------------------------------------------------------------
@@ -372,8 +285,6 @@ def test_bad_payload_goes_to_xq_without_killing_worker() -> None:
         {
             "id": "msg-1",
             "payload": '{"payload_type": "dict", "payload": {"item_id": "x", "priority": 1}}',
-            "attempt": "0",
-            "eta": "",
             "created_at": "0",
         },
     )
@@ -396,8 +307,6 @@ def test_unknown_queue_goes_to_xq() -> None:
         {
             "id": "msg-1",
             "payload": '{"payload_type": "x.Y", "payload": {}}',
-            "attempt": "0",
-            "eta": "",
             "created_at": "0",
         },
     )
@@ -422,31 +331,6 @@ def test_invalid_json_payload_goes_to_xq() -> None:
         {
             "id": "msg-1",
             "payload": "not-json",
-            "attempt": "0",
-            "eta": "",
-            "created_at": "0",
-        },
-    )
-
-    processed = run_worker_once_for_test(broker, queue_name="default")
-    assert processed == 1
-    xq_stream = f"{namespace}:xq"
-    assert len(redis_client.stream_entries.get(xq_stream, [])) == 1
-
-
-def test_non_integer_attempt_goes_to_xq() -> None:
-    namespace = "worker-c3:{etl}"
-    redis_client = FakeRedisClient()
-    broker = build_broker(redis_client, namespace=namespace)
-
-    stream = f"{namespace}:default"
-    redis_client.xadd(
-        stream,
-        {
-            "id": "msg-1",
-            "payload": '{"payload_type": "x.Y", "payload": {}}',
-            "attempt": "not-a-number",
-            "eta": "",
             "created_at": "0",
         },
     )
@@ -536,8 +420,6 @@ def test_claim_entries_accepts_list_response() -> None:
         {
             "id": "msg-1",
             "payload": "{}",
-            "attempt": "0",
-            "eta": "",
             "created_at": "0",
         },
     )
@@ -607,18 +489,6 @@ def test_register_actor_rejects_multiple_payload_parameters() -> None:
         assert "actor 函数必须且仅能声明一个 payload 参数" in str(error)
 
 
-def test_actor_rejects_negative_max_retries() -> None:
-    namespace = "worker-i:{etl}"
-    redis_client = FakeRedisClient()
-    broker = build_broker(redis_client, namespace=namespace)
-
-    try:
-        actor(broker, queue_name="default", max_retries=-1)
-        assert False, "应抛出 ValueError"
-    except ValueError as error:
-        assert "max_retries 不能小于 0" in str(error)
-
-
 def test_register_duplicate_actor_for_same_queue_raises() -> None:
     """同一 queue 注册第二个 actor 应立即 fail-fast。"""
     namespace = "worker-dup:{etl}"
@@ -641,53 +511,6 @@ def test_register_duplicate_actor_for_same_queue_raises() -> None:
 
 
 # ----------------------------------------------------------------------
-# defer / eta 行为
-# ----------------------------------------------------------------------
-
-
-def test_future_eta_message_is_deferred_not_executed() -> None:
-    from time import time as now_ts
-
-    namespace = "worker-defer:{etl}"
-    redis_client = FakeRedisClient()
-    broker = build_broker(redis_client, namespace=namespace)
-
-    called: list[Payload] = []
-
-    @actor(broker, queue_name="default")
-    def process_item(payload: Payload) -> None:
-        called.append(payload)
-
-    future_eta = now_ts() + 10
-    stream = f"{namespace}:default"
-    redis_client.xadd(
-        stream,
-        {
-            "id": "msg-1",
-            "payload": json.dumps(
-                {
-                    "payload_type": resolve_payload_type(process_item.handler).__module__
-                    + "."
-                    + resolve_payload_type(process_item.handler).__qualname__,
-                    "payload": {"item_id": "x", "priority": 1},
-                }
-            ),
-            "attempt": "0",
-            "eta": str(future_eta),
-            "created_at": "0",
-        },
-    )
-
-    run_worker_once_for_test(broker, queue_name="default")
-    assert called == []
-    # 原消息应已 ack，副本进了 queue stream
-    entries = redis_client.stream_entries[stream]
-    assert len(entries) == 2
-    deferred = entries[1][1]
-    assert deferred["eta"] == str(future_eta)
-
-
-# ----------------------------------------------------------------------
 # Hooks
 # ----------------------------------------------------------------------
 
@@ -696,14 +519,14 @@ def test_hooks_fired_on_success_path() -> None:
     namespace = "worker-hooks:{etl}"
     redis_client = FakeRedisClient()
 
-    starts: list[tuple[str, int]] = []
-    successes: list[tuple[str, int]] = []
-    enqueues: list[tuple[str, int]] = []
+    starts: list[str] = []
+    successes: list[str] = []
+    enqueues: list[str] = []
 
     hooks = BrokerHooks(
-        on_handle_start=lambda q, a: starts.append((q, a)),
-        on_handle_success=lambda q, a, e: successes.append((q, a)),
-        on_enqueue=lambda q, a: enqueues.append((q, a)),
+        on_handle_start=lambda q: starts.append(q),
+        on_handle_success=lambda q, e: successes.append(q),
+        on_enqueue=lambda q: enqueues.append(q),
     )
     broker = build_broker(redis_client, namespace=namespace, hooks=hooks)
 
@@ -714,31 +537,23 @@ def test_hooks_fired_on_success_path() -> None:
     process_item.send(Payload(item_id="x", priority=1))
     run_worker_once_for_test(broker, queue_name="default")
 
-    assert enqueues == [("default", 0)]
-    assert starts == [("default", 0)]
-    assert successes == [("default", 0)]
+    assert enqueues == ["default"]
+    assert starts == ["default"]
+    assert successes == ["default"]
 
 
-def test_hooks_fired_on_retry_and_xq() -> None:
+def test_hooks_fired_on_xq() -> None:
     namespace = "worker-hookr:{etl}"
     redis_client = FakeRedisClient()
 
-    retries: list[tuple[str, int]] = []
-    xqs: list[tuple[str, int]] = []
+    xqs: list[str] = []
     hooks = BrokerHooks(
-        on_handle_retry=lambda q, a, e: retries.append((q, a)),
-        on_handle_xq=lambda q, a, e: xqs.append((q, a)),
+        on_handle_xq=lambda q, e: xqs.append(q),
     )
     broker = build_broker(redis_client, namespace=namespace, hooks=hooks)
 
-    @actor(
-        broker,
-        queue_name="default",
-        max_retries=1,
-        retry_backoff_ms_base=1,
-        retry_backoff_ms_max=1,
-    )
-    def fail_once(payload: Payload) -> None:
+    @actor(broker, queue_name="default")
+    def always_fail(payload: Payload) -> None:
         _ = payload
         raise RuntimeError("boom")
 
@@ -749,17 +564,9 @@ def test_hooks_fired_on_retry_and_xq() -> None:
         )
     )
 
-    # 首轮：handler 抛 → retry hook（重试 1ms 后到期）
-    run_worker_once_for_test(broker, queue_name="default")
-    # 等 backoff eta 过期，避免被 worker 当作 future-eta 而 defer
-    from time import sleep
-
-    sleep(0.01)
-    # 第二轮：再抛 → 进 xq hook（attempt=1 == max_retries=1，不再重试）
     run_worker_once_for_test(broker, queue_name="default")
 
-    assert retries == [("default", 1)]
-    assert xqs == [("default", 1)]
+    assert xqs == ["default"]
 
 
 def test_hook_exception_does_not_break_worker() -> None:
@@ -919,6 +726,116 @@ def test_xq_maxlen_trims_failed_messages() -> None:
 
 
 # ----------------------------------------------------------------------
+# 新语义验证：失败直接进 XQ，无重试
+# ----------------------------------------------------------------------
+
+
+def test_handler_failure_goes_straight_to_xq() -> None:
+    """handler 首次失败立即进 XQ，live stream 无重投递副本。"""
+    namespace = "worker-straight-xq:{etl}"
+    redis_client = FakeRedisClient()
+    broker = build_broker(redis_client, namespace=namespace)
+
+    @actor(broker, queue_name="default")
+    def always_fail(payload: Payload) -> None:
+        _ = payload
+        raise RuntimeError("直接进 xq")
+
+    broker.enqueue(
+        new_message(queue_name="default", payload=Payload(item_id="x", priority=1))
+    )
+
+    stream = f"{namespace}:default"
+    entries_before = len(redis_client.stream_entries.get(stream, []))
+
+    run_worker_once_for_test(broker, queue_name="default")
+
+    # live stream 没有新副本（原始消息已 ACK，无重试写回）
+    entries_after = len(redis_client.stream_entries.get(stream, []))
+    assert entries_after == entries_before
+
+    xq_stream = f"{namespace}:xq"
+    xq_entries = redis_client.stream_entries.get(xq_stream, [])
+    assert len(xq_entries) == 1
+    assert "直接进 xq" in xq_entries[0][1]["error"]
+
+
+def test_legacy_message_with_attempt_and_eta_fields_is_consumed() -> None:
+    """旧版消息携带 attempt/eta 字段时，新 worker 静默忽略并正常 dispatch。"""
+    namespace = "worker-legacy:{etl}"
+    redis_client = FakeRedisClient()
+    broker = build_broker(redis_client, namespace=namespace)
+
+    called: list[Payload] = []
+
+    @actor(broker, queue_name="default")
+    def process_item(payload: Payload) -> None:
+        called.append(payload)
+
+    payload_obj = Payload(item_id="legacy-x", priority=5)
+    envelope = json.dumps(
+        {
+            "payload_type": f"{Payload.__module__}.{Payload.__qualname__}",
+            "payload": {"item_id": "legacy-x", "priority": 5},
+        }
+    )
+    stream = f"{namespace}:default"
+    redis_client.xadd(
+        stream,
+        {
+            "id": "legacy-msg-1",
+            "payload": envelope,
+            "attempt": "3",
+            "eta": "999999999",
+            "created_at": "0",
+        },
+    )
+
+    processed = run_worker_once_for_test(broker, queue_name="default")
+    assert processed == 1
+    # handler 被正常调用，消息未被当作 BadEntry
+    assert called == [payload_obj]
+    # 没有 XQ 条目
+    xq_stream = f"{namespace}:xq"
+    assert len(redis_client.stream_entries.get(xq_stream, [])) == 0
+
+
+def test_idle_message_reclaimed_then_handled() -> None:
+    """XAUTOCLAIM 接管的 idle 消息走 dispatch 路径，成功 ACK 或失败进 XQ。"""
+    namespace = "worker-autoclaim:{etl}"
+    redis_client = FakeRedisClient()
+    redis_client.autoclaim_returns_list = True
+    broker = build_broker(redis_client, namespace=namespace, claim_idle_ms=500)
+
+    called: list[Payload] = []
+
+    @actor(broker, queue_name="default")
+    def process_item(payload: Payload) -> None:
+        called.append(payload)
+
+    payload_obj = Payload(item_id="claim-item", priority=1)
+    envelope = json.dumps(
+        {
+            "payload_type": f"{Payload.__module__}.{Payload.__qualname__}",
+            "payload": {"item_id": "claim-item", "priority": 1},
+        }
+    )
+    stream = f"{namespace}:default"
+    redis_client.xadd(
+        stream,
+        {
+            "id": "claim-msg-1",
+            "payload": envelope,
+            "created_at": "0",
+        },
+    )
+
+    processed = run_worker_once_for_test(broker, queue_name="default")
+    assert processed == 1
+    assert called == [payload_obj]
+
+
+# ----------------------------------------------------------------------
 # 主入口
 # ----------------------------------------------------------------------
 
@@ -927,12 +844,10 @@ if __name__ == "__main__":
     test_task_queue_send_and_consume_success_dataclass()
     test_send_messages_batch_success()
     test_task_queue_failure_goes_to_xq_when_no_retry()
-    test_task_queue_retry_uses_atomic_script_and_sets_eta()
     test_task_queue_lua_fallback_without_register_script()
     test_bad_payload_goes_to_xq_without_killing_worker()
     test_unknown_queue_goes_to_xq()
     test_invalid_json_payload_goes_to_xq()
-    test_non_integer_attempt_goes_to_xq()
     test_handler_raise_does_not_kill_worker()
     test_flatten_entries_accepts_tuple_outer()
     test_flatten_entries_accepts_list_outer()
@@ -943,15 +858,16 @@ if __name__ == "__main__":
     test_register_actor_rejects_non_dataclass_annotation()
     test_register_actor_rejects_missing_annotation()
     test_register_actor_rejects_multiple_payload_parameters()
-    test_actor_rejects_negative_max_retries()
     test_register_duplicate_actor_for_same_queue_raises()
-    test_future_eta_message_is_deferred_not_executed()
     test_hooks_fired_on_success_path()
-    test_hooks_fired_on_retry_and_xq()
+    test_hooks_fired_on_xq()
     test_hook_exception_does_not_break_worker()
     test_lua_degraded_triggers_hook()
     test_read_entries_returns_redis_error_outcome()
     test_should_stop_terminates_run_worker()
     test_enqueue_many_uses_pipeline_when_available()
     test_xq_maxlen_trims_failed_messages()
+    test_handler_failure_goes_straight_to_xq()
+    test_legacy_message_with_attempt_and_eta_fields_is_consumed()
+    test_idle_message_reclaimed_then_handled()
     print("task_queue 测试通过")

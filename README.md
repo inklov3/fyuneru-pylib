@@ -258,7 +258,6 @@ broker = build_broker(redis_client, namespace=namespace)
 @actor(
     broker,
     queue_name="default",
-    max_retries=0,
 )
 def process_item(payload: Payload):
     print(payload.item_id, payload.priority)

@@ -82,25 +82,17 @@ class TaskQueueBroker:
     def actor(
         self,
         queue_name: str = "default",
-        max_retries: int = 0,
-        retry_backoff_ms_base: int = 1000,
-        retry_backoff_ms_max: int = 60_000,
     ) -> Callable[[TaskHandler], RegisteredActor]:
         return register_actor(
             register=self._register_actor,
             sender=self._send_payload,
             queue_name=queue_name,
-            max_retries=max_retries,
-            retry_backoff_ms_base=retry_backoff_ms_base,
-            retry_backoff_ms_max=retry_backoff_ms_max,
         )
 
     def enqueue(self, message: TaskMessage) -> str:
         return self._send_payload(
             queue_name=message.queue_name,
             payload=message.payload,
-            attempt=message.attempt,
-            eta=message.eta,
         )
 
     def enqueue_many(self, messages: list[TaskMessage]) -> list[ResultE[str]]:
@@ -112,8 +104,6 @@ class TaskQueueBroker:
                     sender=self._send_payload,
                     queue_name=message.queue_name,
                     payload=message.payload,
-                    attempt=message.attempt,
-                    eta=message.eta,
                 )
                 for message in messages
             ]
@@ -197,46 +187,11 @@ class TaskQueueBroker:
     def handle_success(self, entry: Entry) -> None:
         self.redis_client.xack(entry.stream, self.group_name, entry.message_id)
 
-    def handle_retry(self, entry: Entry, error: Exception) -> None:
-        next_attempt = entry.attempt + 1
-        eta = self._calculate_eta(entry.binding, entry.attempt)
-        self._retry_and_ack(
-            source_stream=entry.stream,
-            queue_stream=self.stream_for(entry.queue_name),
-            message_id=entry.message_id,
-            retry_id=self._next_retry_message_id(),
-            payload=entry.payload_raw,
-            attempt=next_attempt,
-            eta=eta,
-            created_at=time(),
-        )
-        self.notify_hook(
-            "on_handle_retry",
-            entry.queue_name,
-            next_attempt,
-            error,
-        )
-
-    def handle_defer(self, entry: Entry) -> None:
-        if entry.eta is None:
-            raise ValueError("handle_defer 仅适用于 eta 非空的消息")
-        self._defer_and_ack(
-            source_stream=entry.stream,
-            queue_stream=self.stream_for(entry.queue_name),
-            message_id=entry.message_id,
-            defer_id=self._next_retry_message_id(),
-            payload=entry.payload_raw,
-            attempt=entry.attempt,
-            eta=entry.eta,
-            created_at=entry.created_at,
-        )
-
     def handle_xq_for_entry(self, entry: Entry, error: Exception) -> None:
         xq_fields = build_xq_fields(
             original_id=entry.message_id,
             queue_name=entry.queue_name,
             payload=entry.payload_raw,
-            attempt=entry.attempt,
             error=error,
             failed_at=time(),
         )
@@ -249,7 +204,6 @@ class TaskQueueBroker:
         self.notify_hook(
             "on_handle_xq",
             entry.queue_name,
-            entry.attempt,
             error,
         )
 
@@ -258,7 +212,6 @@ class TaskQueueBroker:
             original_id=bad.message_id,
             queue_name=bad.queue_name,
             payload=bad.payload_raw if bad.payload_raw is not None else "",
-            attempt=bad.attempt,
             error=bad.error,
             failed_at=time(),
         )
@@ -273,7 +226,6 @@ class TaskQueueBroker:
         self.notify_hook(
             "on_handle_xq",
             bad.queue_name,
-            bad.attempt,
             bad.error,
         )
 
@@ -286,37 +238,27 @@ class TaskQueueBroker:
         queue_name: str,
         handler: TaskHandler,
         payload_type: type[Any],
-        max_retries: int,
-        retry_backoff_ms_base: int,
-        retry_backoff_ms_max: int,
     ) -> None:
         if queue_name in self._actors:
             raise ValueError(f"queue 已注册 actor: {queue_name}")
         self._actors[queue_name] = ActorBinding(
             handler=handler,
             payload_type=payload_type,
-            max_retries=max_retries,
-            retry_backoff_ms_base=retry_backoff_ms_base,
-            retry_backoff_ms_max=retry_backoff_ms_max,
         )
 
     def _send_payload(
         self,
         queue_name: str,
         payload: dict[str, Any],
-        attempt: int,
-        eta: float | None = None,
     ) -> str:
         stream = self.stream_for(queue_name)
         fields = {
             "id": self._next_retry_message_id(),
             "payload": encode_payload(payload),
-            "attempt": str(attempt),
-            "eta": "" if eta is None else str(eta),
             "created_at": str(time()),
         }
         message_id = self.redis_client.xadd(stream, cast(dict[Any, Any], fields))
-        self.notify_hook("on_enqueue", queue_name, attempt)
+        self.notify_hook("on_enqueue", queue_name)
         return _to_text(message_id)
 
     def _enqueue_many_pipelined(
@@ -333,8 +275,6 @@ class TaskQueueBroker:
                 fields = {
                     "id": self._next_retry_message_id(),
                     "payload": encode_payload(message.payload),
-                    "attempt": str(message.attempt),
-                    "eta": "" if message.eta is None else str(message.eta),
                     "created_at": str(time()),
                 }
                 prepared.append((stream, fields))
@@ -374,9 +314,7 @@ class TaskQueueBroker:
                     continue
                 results[index] = Success(_to_text(raw_id))
                 message = messages[index]
-                self.notify_hook(
-                    "on_enqueue", message.queue_name, message.attempt
-                )
+                self.notify_hook("on_enqueue", message.queue_name)
 
         return results
 
@@ -446,27 +384,11 @@ class TaskQueueBroker:
                 queue_name=queue_name,
                 raw_fields=normalized,
                 payload_raw=payload_raw,
-                attempt=_safe_int(normalized.get("attempt", "0")),
                 reason="字段缺失",
                 error=ValueError("payload 字段缺失"),
             )
 
-        attempt_raw = normalized.get("attempt", "0")
-        try:
-            attempt = int(attempt_raw)
-        except (TypeError, ValueError) as error:
-            return BadEntry(
-                stream=stream,
-                message_id=message_id,
-                queue_name=queue_name,
-                raw_fields=normalized,
-                payload_raw=payload_raw,
-                attempt=0,
-                reason="attempt 字段非整数",
-                error=error,
-            )
-
-        eta = _parse_eta(normalized.get("eta", ""))
+        # attempt / eta 字段被静默忽略，兼容旧版 producer 写入的消息
         created_at = _safe_float(normalized.get("created_at", "0"))
 
         try:
@@ -478,7 +400,6 @@ class TaskQueueBroker:
                 queue_name=queue_name,
                 raw_fields=normalized,
                 payload_raw=payload_raw,
-                attempt=attempt,
                 reason="payload 解析失败",
                 error=error,
             )
@@ -491,7 +412,6 @@ class TaskQueueBroker:
                 queue_name=queue_name,
                 raw_fields=normalized,
                 payload_raw=payload_raw,
-                attempt=attempt,
                 reason="queue 未注册 actor",
                 error=KeyError(f"queue 未注册 actor: {queue_name}"),
             )
@@ -503,108 +423,8 @@ class TaskQueueBroker:
             binding=binding,
             payload_envelope=payload_envelope,
             payload_raw=payload_raw,
-            attempt=attempt,
-            eta=eta,
             created_at=created_at,
         )
-
-    def _calculate_eta(self, binding: ActorBinding, attempt: int) -> float:
-        base_ms = binding.retry_backoff_ms_base
-        max_ms = binding.retry_backoff_ms_max
-        # attempt 来自消息字段，理论上由 worker 限制在 max_retries 范围；但消息也可能
-        # 由外部 producer 直接构造，attempt 任意大会让 2**attempt 算出 megabyte 级 bignum。
-        # 在左移前 saturating clamp 到 30——base * 2**30 ≈ 12 天，已远超任何合理 max_ms。
-        shift = max(0, min(attempt, 30))
-        backoff_ms = min(base_ms * (2**shift), max_ms)
-        return time() + backoff_ms / 1000.0
-
-    def _retry_and_ack(
-        self,
-        source_stream: str,
-        queue_stream: str,
-        message_id: str,
-        retry_id: str,
-        payload: str,
-        attempt: int,
-        eta: float,
-        created_at: float,
-    ) -> str:
-        eta_text = str(eta)
-        script = self._scripts.get("retry_and_ack")
-        if script is not None:
-            retry_stream_id = script(
-                keys=[source_stream, queue_stream],
-                args=[
-                    self.group_name,
-                    message_id,
-                    retry_id,
-                    payload,
-                    str(attempt),
-                    eta_text,
-                    str(created_at),
-                ],
-            )
-            return _to_text(retry_stream_id)
-
-        retry_stream_id = self.redis_client.xadd(
-            queue_stream,
-            cast(
-                dict[Any, Any],
-                {
-                    "id": retry_id,
-                    "payload": payload,
-                    "attempt": str(attempt),
-                    "eta": eta_text,
-                    "created_at": str(created_at),
-                },
-            ),
-        )
-        self.redis_client.xack(source_stream, self.group_name, message_id)
-        return _to_text(retry_stream_id)
-
-    def _defer_and_ack(
-        self,
-        source_stream: str,
-        queue_stream: str,
-        message_id: str,
-        defer_id: str,
-        payload: str,
-        attempt: int,
-        eta: float,
-        created_at: float,
-    ) -> str:
-        eta_text = str(eta)
-        script = self._scripts.get("defer_and_ack")
-        if script is not None:
-            defer_stream_id = script(
-                keys=[source_stream, queue_stream],
-                args=[
-                    self.group_name,
-                    message_id,
-                    defer_id,
-                    payload,
-                    str(attempt),
-                    eta_text,
-                    str(created_at),
-                ],
-            )
-            return _to_text(defer_stream_id)
-
-        defer_stream_id = self.redis_client.xadd(
-            queue_stream,
-            cast(
-                dict[Any, Any],
-                {
-                    "id": defer_id,
-                    "payload": payload,
-                    "attempt": str(attempt),
-                    "eta": eta_text,
-                    "created_at": str(created_at),
-                },
-            ),
-        )
-        self.redis_client.xack(source_stream, self.group_name, message_id)
-        return _to_text(defer_stream_id)
 
     def _xq_and_ack(
         self,
@@ -625,7 +445,6 @@ class TaskQueueBroker:
                     xq_fields["original_id"],
                     xq_fields["queue"],
                     xq_fields["payload"],
-                    xq_fields["attempt"],
                     xq_fields["error"],
                     xq_fields["traceback"],
                     xq_fields["failed_at"],
@@ -696,33 +515,20 @@ def build_broker(
 def new_message(
     queue_name: str,
     payload: Any,
-    attempt: int = 0,
-    eta: float | None = None,
 ) -> TaskMessage:
-    if attempt < 0:
-        raise ValueError("attempt 不能小于 0")
-
     normalized_payload = normalize_payload_envelope(payload, type(payload))
     return TaskMessage(
         queue_name=queue_name,
         payload=normalized_payload,
-        attempt=attempt,
-        eta=eta,
     )
 
 
 def actor(
     broker: TaskQueueBroker,
     queue_name: str = "default",
-    max_retries: int = 0,
-    retry_backoff_ms_base: int = 1000,
-    retry_backoff_ms_max: int = 60_000,
 ) -> Callable[[TaskHandler], RegisteredActor]:
     return broker.actor(
         queue_name=queue_name,
-        max_retries=max_retries,
-        retry_backoff_ms_base=retry_backoff_ms_base,
-        retry_backoff_ms_max=retry_backoff_ms_max,
     )
 
 
@@ -755,23 +561,6 @@ def _flatten_entries(response: Any) -> list[tuple[str, dict[Any, Any]]]:
 
 def _normalize_stream_fields(fields: dict[Any, Any]) -> dict[str, str]:
     return {_to_text(key): _to_text(value) for key, value in fields.items()}
-
-
-def _parse_eta(value: str) -> float | None:
-    if value is None or value == "":
-        return None
-    try:
-        parsed = float(value)
-    except (TypeError, ValueError):
-        return None
-    return parsed
-
-
-def _safe_int(value: Any, default: int = 0) -> int:
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return default
 
 
 def _safe_float(value: Any, default: float = 0.0) -> float:

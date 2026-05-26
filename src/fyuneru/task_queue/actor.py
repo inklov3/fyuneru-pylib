@@ -13,13 +13,10 @@ from fyuneru.task_queue.types import TaskHandler
 
 @dataclass(frozen=True)
 class RegisteredActor:
-    _sender: Callable[[str, dict[str, Any], int, float | None], str]
+    _sender: Callable[[str, dict[str, Any]], str]
     queue_name: str
     handler: TaskHandler
     payload_type: type[Any]
-    max_retries: int = 0
-    retry_backoff_ms_base: int = 1000
-    retry_backoff_ms_max: int = 60_000
 
     def __call__(self, payload: Any) -> Any:
         return self.handler(payload)
@@ -27,42 +24,26 @@ class RegisteredActor:
     @safe
     def send(self, payload: Any) -> str:
         payload_envelope = normalize_payload_envelope(payload, self.payload_type)
-        return self._sender(self.queue_name, payload_envelope, 0, None)
+        return self._sender(self.queue_name, payload_envelope)
 
 
 def actor(
     register: Callable[..., None],
-    sender: Callable[[str, dict[str, Any], int, float | None], str],
+    sender: Callable[[str, dict[str, Any]], str],
     queue_name: str = "default",
-    max_retries: int = 0,
-    retry_backoff_ms_base: int = 1000,
-    retry_backoff_ms_max: int = 60_000,
 ) -> Callable[[TaskHandler], RegisteredActor]:
-    if max_retries < 0:
-        raise ValueError("max_retries 不能小于 0")
-    if retry_backoff_ms_base <= 0:
-        raise ValueError("retry_backoff_ms_base 必须大于 0")
-    if retry_backoff_ms_max < retry_backoff_ms_base:
-        raise ValueError("retry_backoff_ms_max 不能小于 retry_backoff_ms_base")
-
     def decorator(function: TaskHandler) -> RegisteredActor:
         payload_type = resolve_payload_type(function)
         register(
             queue_name,
             function,
             payload_type,
-            max_retries,
-            retry_backoff_ms_base,
-            retry_backoff_ms_max,
         )
         return RegisteredActor(
             _sender=sender,
             queue_name=queue_name,
             handler=function,
             payload_type=payload_type,
-            max_retries=max_retries,
-            retry_backoff_ms_base=retry_backoff_ms_base,
-            retry_backoff_ms_max=retry_backoff_ms_max,
         )
 
     return decorator
@@ -97,7 +78,6 @@ def build_xq_fields(
     original_id: str,
     queue_name: str,
     payload: str,
-    attempt: int,
     error: Exception,
     failed_at: float,
 ) -> dict[str, str]:
@@ -105,7 +85,6 @@ def build_xq_fields(
         "original_id": original_id,
         "queue": queue_name,
         "payload": payload,
-        "attempt": str(attempt),
         "error": str(error),
         "traceback": _format_exception_safely(error),
         "failed_at": str(failed_at),
@@ -118,14 +97,12 @@ def _format_exception_safely(error: Exception) -> str:
 
 
 def safe_send_message(
-    sender: Callable[[str, dict[str, Any], int, float | None], str],
+    sender: Callable[[str, dict[str, Any]], str],
     queue_name: str,
     payload: dict[str, Any],
-    attempt: int,
-    eta: float | None,
 ) -> ResultE[str]:
     @safe
     def send() -> str:
-        return sender(queue_name, payload, attempt, eta)
+        return sender(queue_name, payload)
 
     return send()

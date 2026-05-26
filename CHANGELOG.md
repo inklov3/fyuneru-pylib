@@ -1,5 +1,27 @@
 # Changelog
 
+## 2026-05-26
+
+### 重构（破坏性）
+
+- **`task_queue`** — 移除 eta（延迟调度）与 attempt/retry（自维护重试）两套机制，回归最朴素的"至少一次消费 + 死信流"语义
+  - handler 抛错 / payload 校验失败 / actor 未注册 → 一律进 XQ，无内置重试
+  - 旧版消息携带 `attempt`/`eta` 字段时静默忽略，向前兼容
+  - XQ entry 不再写 `attempt` 字段
+
+#### BREAKING CHANGES
+
+- `ActorBinding`：删除 `max_retries` / `retry_backoff_ms_base` / `retry_backoff_ms_max`
+- `TaskMessage`：删除 `attempt` / `eta` 字段；`new_message()` 同名参数删除
+- `BrokerHooks`：删除 `on_handle_retry`；所有保留 hook 去掉 `attempt` 位置参数
+  - 旧：`on_enqueue=lambda q, a: ...` → 新：`on_enqueue=lambda q: ...`
+  - 旧：`on_handle_start=lambda q, a: ...` → 新：`on_handle_start=lambda q: ...`
+  - 旧：`on_handle_success=lambda q, a, e: ...` → 新：`on_handle_success=lambda q, e: ...`
+  - 旧：`on_handle_xq=lambda q, a, e: ...` → 新：`on_handle_xq=lambda q, e: ...`
+- `BrokerOps`：删除 `handle_retry` / `handle_defer` 两个方法
+- `actor()` / `TaskQueueBroker.actor()`：删除 `max_retries` / `retry_backoff_ms_base` / `retry_backoff_ms_max` 参数
+- Lua 脚本：删除 `retry_and_ack.lua` / `defer_and_ack.lua`；`xq_and_ack.lua` ARGV 下标前移（不再传 `attempt`）
+
 ## 2026-04-27
 
 ### 新增

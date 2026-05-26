@@ -20,28 +20,15 @@ class TaskActor(Protocol):
 
 @dataclass(frozen=True)
 class ActorBinding:
-    """actor 的内部绑定：handler、payload 类型、重试配置。
-
-    ``max_retries=N`` 表示**最多 N 次额外重试**，一条消息最多被执行 N+1 次。
-    重试延迟按 ``min(retry_backoff_ms_base * 2 ** attempt, retry_backoff_ms_max)``
-    指数退避。
-    """
+    """actor 的内部绑定：handler 与 payload 类型。"""
 
     handler: TaskHandler
     payload_type: type[Any]
-    max_retries: int = 0
-    retry_backoff_ms_base: int = 1000
-    retry_backoff_ms_max: int = 60_000
 
 
 @dataclass(frozen=True)
 class TaskMessage:
-    """投递到队列的消息。
-
-    ``attempt`` 表示**进入 handler 前已经被尝试过的次数**，首次投递为 0。
-    """
+    """投递到队列的消息。"""
 
     queue_name: str
     payload: dict[str, Any]
-    attempt: int = 0
-    eta: float | None = None

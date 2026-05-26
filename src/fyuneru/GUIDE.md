@@ -385,23 +385,16 @@ build_broker(
 actor(
     broker: TaskQueueBroker,
     queue_name: str = "default",
-    max_retries: int = 0,
-    retry_backoff_ms_base: int = 1000,
-    retry_backoff_ms_max: int = 60_000,
 ) -> Callable[[TaskHandler], RegisteredActor]
 # Registers a handler and returns actor object with .send(payload).
 # Handler must declare exactly one positional payload parameter annotated as dataclass.
 # 一个 queue 只能注册一个 actor；重复注册立即 raise ValueError。
-# 重试 backoff 公式：min(retry_backoff_ms_base * 2 ** attempt, retry_backoff_ms_max)。
-# 重试消息写入新的 eta 字段，worker 主循环在 eta 未到时会原子地 defer（XADD 副本 + XACK 原消息）。
 
 new_message(
     queue_name: str,
     payload: Any,
-    attempt: int = 0,
-    eta: float | None = None,
 ) -> TaskMessage
-# payload must be a dataclass instance and attempt must be >= 0.
+# payload must be a dataclass instance.
 
 TaskQueueBroker.enqueue(message: TaskMessage) -> str
 # Enqueues message into stream and returns message id.
@@ -427,15 +420,13 @@ TaskQueueBroker.run_worker(
     should_stop: Callable[[], bool] | None = None,
 ) -> int
 # Consumes and executes tasks; acks on success. 返回值是本次循环已处理的消息数量
-# （执行 / 重试 / 进 xq / defer 各算一次）。
+# （执行 / 进 xq 各算一次）。
 # consumer_name=None 时回退到环境变量 HOSTNAME（K8s 下即 Pod 名），
 # 都不存在再回退到 "worker-1"。
 # 单条消息异常 / Lua 失败 / Redis 抖动均被吞掉，worker 不会因此退出；
 # Redis 连接错误走指数退避（base 0.5s，max 30s）后继续。
 # should_stop 由调用方注入 SIGTERM 处理（库不夺取信号），主循环每轮入口检查一次。
-# 失败处理：actor 抛错且 attempt < max_retries 走重试（写带 eta 的副本 + ACK 原消息）；
-# 否则进 xq 流（保留 payload + error + traceback）。actor 未注册 / payload 解析失败 /
-# 字段非法的"坏消息"直接进 xq，不消耗 max_retries。
+# 失败处理：handler 抛错 / payload 校验失败 / actor 未注册 → 一律进 xq（无内置重试）。
 ```
 
 **Observability hooks（`BrokerHooks`）**：注入零开销的 callback，缺省全部 None。任何 hook
@@ -445,13 +436,12 @@ TaskQueueBroker.run_worker(
 from fyuneru.task_queue import BrokerHooks
 
 hooks = BrokerHooks(
-    on_enqueue=lambda queue, attempt: ...,                  # 入队
-    on_handle_start=lambda queue, attempt: ...,             # handler 开始执行
-    on_handle_success=lambda queue, attempt, elapsed: ...,  # 成功
-    on_handle_retry=lambda queue, attempt, error: ...,      # 重试
-    on_handle_xq=lambda queue, attempt, error: ...,         # 进 xq
-    on_lua_degraded=lambda reason: ...,                     # Lua 注册失败降级
-    on_redis_error=lambda error: ...,                       # Redis 读取异常
+    on_enqueue=lambda queue: ...,                  # 入队
+    on_handle_start=lambda queue: ...,             # handler 开始执行
+    on_handle_success=lambda queue, elapsed: ...,  # 成功
+    on_handle_xq=lambda queue, error: ...,         # 进 xq
+    on_lua_degraded=lambda reason: ...,            # Lua 注册失败降级
+    on_redis_error=lambda error: ...,              # Redis 读取异常
 )
 broker = build_broker(redis_client, namespace=..., hooks=hooks)
 ```
@@ -461,10 +451,6 @@ broker = build_broker(redis_client, namespace=..., hooks=hooks)
 推荐用 `fyuneru.redis_toolkit.calculate_checkpoint_key` + `bind_redis_set_reader/writer`
 做 per-payload-key 的幂等检查（jump-cut 的 `is_past_checkpoint` / `advance_checkpoint` 即是此模式）。
 
-**`attempt` 字段语义**：`max_retries=N` 表示**最多 N 次额外重试**，即一条消息总共最多被
-执行 **N + 1** 次。`attempt` 是消息进入 handler 前已经被尝试过的次数，**首次为 0**。
-进入 xq 的消息上的 `attempt` 即是失败时的 attempt 值。
-
 **滚动发布的 schema 兼容性**：actor 未注册 / payload 与 dataclass 不匹配等"schema 错位"
 失败现在**静默进 xq**而不是杀 worker。这是必要妥协（避免一条坏消息卡死整个队列），
 但意味着滚动发布期间——producer 已升级、consumer 还是旧版——valid 消息会被旧
@@ -473,11 +459,6 @@ worker 当成"坏消息"丢进 xq。两条防线：
 - 监控：通过 `on_handle_xq` hook 按 `error` 类型分桶——`ValueError("payload 字段
   与 dataclass 不匹配")`、`KeyError("actor 未注册")` 等都是 schema 错位信号，应该
   与"actor 抛错"分开告警。
-
-**defer 行为**：`eta > now` 的消息会被 broker 复制到队列尾 + ACK 原消息，worker
-轮询到时再次读到该副本即 defer 一次。worker 在"全 defer 无任何 execute"的批次后
-会睡到 `min(剩余 eta, block_ms)`，避免 hot loop；但每个 defer 仍生成一条新的流
-条目，对超长 eta + 短 block_ms 的场景，xq 流可能膨胀，**建议配合 `xq_maxlen`**。
 
 ### dramatiq_toolkit (`fyuneru.dramatiq_toolkit`)
 

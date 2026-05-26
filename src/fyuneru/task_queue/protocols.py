@@ -27,14 +27,12 @@ class Entry:
     binding: ActorBinding
     payload_envelope: dict[str, Any]
     payload_raw: str
-    attempt: int
-    eta: float | None
     created_at: float
 
 
 @dataclass(frozen=True)
 class BadEntry:
-    """无法投递的消息——坏 JSON、缺字段、actor 未注册、attempt 非数字等。
+    """无法投递的消息——坏 JSON、缺字段、actor 未注册等。
 
     broker 把这些消息按统一格式送入 xq；worker 收到后只需要调用
     ``broker.handle_xq_for_bad`` 即可，不必关心具体失败原因。
@@ -45,7 +43,6 @@ class BadEntry:
     queue_name: str
     raw_fields: dict[str, str]
     payload_raw: str | None
-    attempt: int
     reason: str
     error: Exception
 
@@ -74,11 +71,10 @@ class BrokerHooks:
     回调内部抛错不会反过来杀 worker——broker 会捕获并 warning 一次。
     """
 
-    on_enqueue: Callable[[str, int], None] | None = None
-    on_handle_start: Callable[[str, int], None] | None = None
-    on_handle_success: Callable[[str, int, float], None] | None = None
-    on_handle_retry: Callable[[str, int, Exception], None] | None = None
-    on_handle_xq: Callable[[str, int, Exception], None] | None = None
+    on_enqueue: Callable[[str], None] | None = None
+    on_handle_start: Callable[[str], None] | None = None
+    on_handle_success: Callable[[str, float], None] | None = None
+    on_handle_xq: Callable[[str, Exception], None] | None = None
     on_lua_degraded: Callable[[str], None] | None = None
     on_redis_error: Callable[[Exception], None] | None = None
 
@@ -105,10 +101,6 @@ class BrokerOps(Protocol):
     def actor_for(self, queue_name: str) -> ActorBinding | None: ...
 
     def handle_success(self, entry: Entry) -> None: ...
-
-    def handle_retry(self, entry: Entry, error: Exception) -> None: ...
-
-    def handle_defer(self, entry: Entry) -> None: ...
 
     def handle_xq_for_entry(self, entry: Entry, error: Exception) -> None: ...
 
