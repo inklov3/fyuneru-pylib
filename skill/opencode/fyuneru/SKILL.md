@@ -37,6 +37,7 @@ description: fyuneru / fyuneru-pylib Python 工具库的 API 索引。当用户�
 | [`references/30_task_queue.md`](references/30_task_queue.md) | `fyuneru.task_queue` | `[pipeline]` | Redis Streams broker / actor / worker / xq |
 | [`references/31_dramatiq_toolkit.md`](references/31_dramatiq_toolkit.md) | `fyuneru.dramatiq_toolkit` | `[pipeline]` | Dramatiq 批量入队辅助 |
 | [`references/32_worker_env.md`](references/32_worker_env.md) | `fyuneru.worker` | 按启用资源 | `setup_worker_env` + result key 约定 |
+| [`references/40_pipeline_project.md`](references/40_pipeline_project.md) | 项目骨架 | `[pipeline]` + 按资源 extra | WorkerEnv + task_queue 多节点/单节点 pipeline 搭建 |
 
 ## 触发后的工作流
 
