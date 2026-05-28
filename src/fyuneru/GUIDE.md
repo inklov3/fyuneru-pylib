@@ -22,7 +22,7 @@ uv add "fyuneru[gemini] @ git+https://github.com/inklov3/fyuneru-pylib.git"     
 - **`bind_*`** binds client/resources and returns a single composable operation function
 - **`build_*`** builds higher-level composed objects
 - **`@safe`** wraps return values in `Result` type; use `unwrap(result)` to extract the value
-- **Checkpoint** key follows `workspace/task/label` hierarchy and can be composed with redis set binders or `fyuneru.worker` env setup
+- **Checkpoint** key follows `workspace/label` hierarchy and can be composed with redis set binders or `fyuneru.worker` env setup
 
 ## Modules
 
@@ -138,15 +138,15 @@ bind_redis_set_reader(client: Redis | RedisCluster, set_name: str) -> RedisSetRe
 bind_redis_set_deleter(client: Redis | RedisCluster, set_name: str) -> RedisSetDeleter
 # deleter(key: str) -> ResultE[None]  — srem
 
-calculate_checkpoint_key(workspace: str, task: str, label: str) -> str
-# Returns "{workspace}:{task}:checkpoint:{label}"
+calculate_checkpoint_key(workspace: str, label: str) -> str
+# Returns "{workspace}:checkpoint:{label}"
 ```
 
 **Checkpoint pattern:**
 ```python
 from fyuneru.result import unwrap
 
-checkpoint_key = calculate_checkpoint_key(workspace="ws-a", task="etl", label="node-1")
+checkpoint_key = calculate_checkpoint_key(workspace="ws-a", label="node-1")
 advance = bind_redis_set_writer(redis, set_name=checkpoint_key)
 is_past = bind_redis_set_reader(redis, set_name=checkpoint_key)
 delete = bind_redis_set_deleter(redis, set_name=checkpoint_key)
@@ -345,16 +345,15 @@ setup_worker_env(label: str, config: dict[str, Any]) -> WorkerEnv
 # Builds worker environment with optional resources.
 # redis/s3/mongo/source_reader are created only if config sections exist.
 
-calculate_checkpoint_key(workspace: str, task: str, label: str) -> str
-# Returns "{workspace}:{task}:checkpoint:{label}".
+calculate_checkpoint_key(workspace: str, label: str) -> str
+# Returns "{workspace}:checkpoint:{label}".
 
 calculate_result_key(
     workspace: str,
-    task: str,
     key: str,
     artifact: str,
 ) -> str
-# Returns "{workspace}/{task}/result/{key}/{artifact}.pkl".
+# Returns "{workspace}/result/{key}/{artifact}.pkl".
 ```
 
 ### task_queue (`fyuneru.task_queue`)

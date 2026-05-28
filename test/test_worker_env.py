@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import fyuneru.worker.env as worker_env_module
 from fyuneru.mongo_toolkit import bind_collection, ensure_index
 from fyuneru.result import Failure, Success, is_failure, is_success, unwrap
-from fyuneru.worker import calculate_checkpoint_key, calculate_result_key, setup_worker_env
-import fyuneru.worker.env as worker_env_module
+from fyuneru.worker import (
+    calculate_checkpoint_key,
+    calculate_result_key,
+    setup_worker_env,
+)
 
 
 class FakeRedisClient:
@@ -20,7 +24,9 @@ class FakeRedisClient:
 class FakeCollection:
     def __init__(self):
         self.indexes: dict[str, dict] = {"_id_": {}}
-        self.create_calls: list[tuple[list[tuple[str, int]], str, bool, bool, bool]] = []
+        self.create_calls: list[
+            tuple[list[tuple[str, int]], str, bool, bool, bool]
+        ] = []
 
     def index_information(self) -> dict[str, dict]:
         return self.indexes
@@ -54,10 +60,10 @@ class FakeDatabase:
 
 
 def test_calculate_keys() -> None:
-    assert calculate_checkpoint_key("ws-a", "etl", "node-1") == "ws-a:etl:checkpoint:node-1"
+    assert calculate_checkpoint_key("ws-a", "node-1") == "ws-a:checkpoint:node-1"
     assert (
-        calculate_result_key("ws-a", "etl", "unit-1", "summary")
-        == "ws-a/etl/result/unit-1/summary.pkl"
+        calculate_result_key("ws-a", "unit-1", "summary")
+        == "ws-a/result/unit-1/summary.pkl"
     )
 
 
@@ -66,7 +72,6 @@ def test_setup_worker_env_without_optional_resources() -> None:
         label="node-1",
         config={
             "workspace": "ws-a",
-            "task": "etl",
         },
     )
 
@@ -92,29 +97,30 @@ def test_setup_worker_env_with_all_resources() -> None:
     original_mongo_init_db = worker_env_module.mongo_toolkit.init_database_from_config
 
     try:
-        worker_env_module.redis_toolkit.init_client_from_config = (
-            lambda _config: lambda: fake_redis
+        worker_env_module.redis_toolkit.init_client_from_config = lambda _config: (
+            lambda: fake_redis
         )
-        worker_env_module.s3_toolkit.init_client_from_config = lambda _config: lambda: object()
-        worker_env_module.s3_toolkit.bind_s3_writer = (
-            lambda _client, _bucket: lambda _key, _body: Success(None)
+        worker_env_module.s3_toolkit.init_client_from_config = lambda _config: (
+            lambda: object()
         )
-        worker_env_module.s3_toolkit.bind_s3_reader = (
-            lambda _client, _bucket: lambda _key: Success(b"s3-data")
+        worker_env_module.s3_toolkit.bind_s3_writer = lambda _client, _bucket: (
+            lambda _key, _body: Success(None)
+        )
+        worker_env_module.s3_toolkit.bind_s3_reader = lambda _client, _bucket: (
+            lambda _key: Success(b"s3-data")
         )
         worker_env_module.s3_source.load_source_registry = lambda _config: {"src": {}}
-        worker_env_module.s3_source.bind_source_reader = (
-            lambda _registry: lambda _uri: Success(b"source-data")
+        worker_env_module.s3_source.bind_source_reader = lambda _registry: (
+            lambda _uri: Success(b"source-data")
         )
-        worker_env_module.mongo_toolkit.init_database_from_config = (
-            lambda _config: lambda: fake_db
+        worker_env_module.mongo_toolkit.init_database_from_config = lambda _config: (
+            lambda: fake_db
         )
 
         env = setup_worker_env(
             label="node-1",
             config={
                 "workspace": "ws-a",
-                "task": "etl",
                 "redis": {"host": "127.0.0.1", "port": 6379, "db": 0},
                 "s3": {
                     "endpoint": "https://s3.example.com",
@@ -146,7 +152,9 @@ def test_setup_worker_env_with_all_resources() -> None:
         worker_env_module.s3_toolkit.bind_s3_reader = original_bind_s3_reader
         worker_env_module.s3_source.load_source_registry = original_load_registry
         worker_env_module.s3_source.bind_source_reader = original_bind_source_reader
-        worker_env_module.mongo_toolkit.init_database_from_config = original_mongo_init_db
+        worker_env_module.mongo_toolkit.init_database_from_config = (
+            original_mongo_init_db
+        )
 
 
 def test_bind_collection_and_ensure_index() -> None:

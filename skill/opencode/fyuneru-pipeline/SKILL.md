@@ -39,7 +39,7 @@ description: fyuneru pipeline 项目搭建指南。当用户要用 fyuneru.task_
 
 - payload 是否是集中定义的 dataclass
 - 每个 actor handler 是否只有一个 payload 参数
-- `setup_worker_env` 之前是否注入了 `workspace` 和 `task`
+- `setup_worker_env` 之前是否注入了 `workspace`
 - 使用 `env.*` 前是否显式检查 None
 - handler 是否满足 at-least-once 下的幂等要求
 - 写完是否运行下游项目声明的 lint / typecheck

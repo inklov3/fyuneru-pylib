@@ -55,9 +55,9 @@ class WorkerEnv:
 
 对齐 `setup_worker_env(label, config)` 语义。
 
-1. 校验基础标识：`workspace`、`task`、`label` 非空。
+1. 校验基础标识：`workspace`、`label` 非空。
 2. 若存在 `redis` 配置：初始化 redis client。
-3. 基于 `workspace/task/label` 计算 checkpoint key。
+3. 基于 `workspace/label` 计算 checkpoint key。
 4. 若 redis 可用：构造 `advance_checkpoint/is_past_checkpoint`。
 5. 若存在 `s3` 配置：初始化 s3 client 并构造 `s3_writer/s3_reader`。
 6. 若存在 `s3_sources` 配置：构造 `source_reader`。
@@ -82,8 +82,8 @@ def setup_worker_env(label: str, config: dict[str, Any]) -> WorkerEnv:
 checkpoint key 统一公式：
 
 ```python
-def calculate_checkpoint_key(workspace: str, task: str, label: str) -> str:
-    return f"{workspace}:{task}:checkpoint:{label}"
+def calculate_checkpoint_key(workspace: str, label: str) -> str:
+    return f"{workspace}:checkpoint:{label}"
 ```
 
 `is_past_checkpoint` 与 `advance_checkpoint` 必须使用同一 key 与同一 redis 命名空间。
@@ -95,11 +95,10 @@ def calculate_checkpoint_key(workspace: str, task: str, label: str) -> str:
 ```python
 def calculate_result_key(
     workspace: str,
-    task: str,
     key: str,
     artifact: str,
 ) -> str:
-    return f"{workspace}/{task}/result/{key}/{artifact}.pkl"
+    return f"{workspace}/result/{key}/{artifact}.pkl"
 ```
 
 说明：
@@ -125,12 +124,11 @@ def setup_worker_env(label: str, config: dict[str, Any]) -> WorkerEnv: ...
 
 def calculate_result_key(
     workspace: str,
-    task: str,
     key: str,
     artifact: str,
 ) -> str: ...
 
-def calculate_checkpoint_key(workspace: str, task: str, label: str) -> str: ...
+def calculate_checkpoint_key(workspace: str, label: str) -> str: ...
 ```
 
 推荐提供（放在 `mongo_toolkit`）：
@@ -163,7 +161,6 @@ from fyuneru.mongo_toolkit import bind_collection, ensure_index
 
 config = {
     "workspace": "ws-a",
-    "task": "etl",
     "redis": {"host": "127.0.0.1", "port": 6379, "db": 0},
     "s3": {
         "endpoint": "https://s3.example.com",
@@ -179,7 +176,6 @@ env = setup_worker_env(label="node-demux", config=config)
 result_key_builder = partial(
     calculate_result_key,
     workspace=config["workspace"],
-    task=config["task"],
 )
 
 result_key = result_key_builder(
@@ -202,7 +198,7 @@ if env.mongo_db is not None:
 说明：
 - 若配置中缺失 `redis/s3/mongo/s3_sources`，对应 `WorkerEnv` 字段会是 `None`。
 - `source_reader` 仅在 `s3_sources` 存在时构建。
-- checkpoint key 固定为 `workspace:task:checkpoint:label`。
+- checkpoint key 固定为 `workspace:checkpoint:label`。
 
 ---
 
@@ -221,14 +217,14 @@ if env.mongo_db is not None:
 
 2. 新增 `src/fyuneru/worker/env.py`
    - 实现 `setup_worker_env(label, config)`。
-   - 实现 `calculate_result_key(workspace, task, key, artifact)`。
-   - 做 `workspace/task/label` 参数校验。
+   - 实现 `calculate_result_key(workspace, key, artifact)`。
+   - 做 `workspace/label` 参数校验。
 
 3. 新增 `src/fyuneru/worker/__init__.py`
    - 导出 `WorkerEnv`、`setup_worker_env`、`calculate_result_key`。
 
 4. 修改 `src/fyuneru/redis_toolkit.py`
-   - checkpoint 计算函数签名改为 `workspace/task/label`。
+   - checkpoint 计算函数签名改为 `workspace/label`。
 
 5. 修改 `src/fyuneru/mongo_toolkit.py`
    - 新增 `bind_collection`。
@@ -257,8 +253,8 @@ if env.mongo_db is not None:
 - `setup_worker_env` 在最小配置下可构建成功。
 - redis/s3/mongo/s3_sources 缺失时对应字段为 `None`。
 - 配置存在时对应字段可用。
-- checkpoint key 为 `workspace:task:checkpoint:label`。
-- result key 为 `{workspace}/{task}/result/{key}/{artifact}.pkl`。
+- checkpoint key 为 `workspace:checkpoint:label`。
+- result key 为 `{workspace}/result/{key}/{artifact}.pkl`。
 
 新增或补充 mongo 测试：
 

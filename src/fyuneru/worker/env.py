@@ -8,24 +8,21 @@ from fyuneru.worker.types import WorkerEnv
 
 def calculate_result_key(
     workspace: str,
-    task: str,
     key: str,
     artifact: str,
 ) -> str:
     workspace_name = _require_non_empty_text("workspace", workspace)
-    task_name = _require_non_empty_text("task", task)
     unit_key = _require_non_empty_text("key", key)
     artifact_name = _require_non_empty_text("artifact", artifact)
-    return f"{workspace_name}/{task_name}/result/{unit_key}/{artifact_name}.pkl"
+    return f"{workspace_name}/result/{unit_key}/{artifact_name}.pkl"
 
 
 def setup_worker_env(label: str, config: dict[str, Any]) -> WorkerEnv:
-    label_name, workspace, task = _validate_base(label, config)
+    label_name, workspace = _validate_base(label, config)
 
     redis_client, advance_checkpoint, is_past_checkpoint = _build_redis(
         config=config,
         workspace=workspace,
-        task=task,
         label=label_name,
     )
     s3_writer, s3_reader = _build_s3(config)
@@ -45,19 +42,17 @@ def setup_worker_env(label: str, config: dict[str, Any]) -> WorkerEnv:
     )
 
 
-def _validate_base(label: str, config: dict[str, Any]) -> tuple[str, str, str]:
+def _validate_base(label: str, config: dict[str, Any]) -> tuple[str, str]:
     if not isinstance(config, dict):
         raise TypeError("config 必须是字典")
     label_name = _require_non_empty_text("label", label)
     workspace = _require_non_empty_text("workspace", config.get("workspace"))
-    task = _require_non_empty_text("task", config.get("task"))
-    return label_name, workspace, task
+    return label_name, workspace
 
 
 def _build_redis(
     config: dict[str, Any],
     workspace: str,
-    task: str,
     label: str,
 ):
     if "redis" not in config:
@@ -66,7 +61,6 @@ def _build_redis(
     redis_client = redis_toolkit.init_client_from_config(config)()
     checkpoint_key = redis_toolkit.calculate_checkpoint_key(
         workspace=workspace,
-        task=task,
         label=label,
     )
     advance_checkpoint = redis_toolkit.bind_redis_set_writer(

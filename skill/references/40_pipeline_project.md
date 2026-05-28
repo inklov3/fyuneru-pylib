@@ -50,7 +50,6 @@ dependencies = [
 
 ```yaml
 workspace: my-workspace
-task: my-task
 redis:
   host: localhost
   port: 6379
@@ -70,7 +69,7 @@ s3_sources:
   secret_access_key: xxx
 ```
 
-`workspace` 和 `task` 可以由 CLI 注入到 `read_config(...)` 返回的 dict；不要把这两个概念写死在节点函数里。
+`workspace` 可以由 CLI 或项目常量注入到 `read_config(...)` 返回的 dict；它是队列 namespace、checkpoint 与结果路径的统一隔离边界。
 
 ## cli.py 模式
 
@@ -94,7 +93,6 @@ def parse_common_args(
     parser = argparse.ArgumentParser(description=description)
     parser.add_argument("--config", type=Path, default=Path("config.yml"))
     parser.add_argument("--workspace", required=True)
-    parser.add_argument("--task", required=True)
     parser.add_argument("--group", default="default")
     parser.add_argument("--claim-idle-ms", type=int, default=None)
     parser.add_argument("--consumer", default=None)
@@ -109,7 +107,6 @@ def setup_pipeline_env(label: str, args: argparse.Namespace) -> WorkerEnv:
     unwrap(configure_logger(level=args.log_level))
     config = read_config(args.config)
     config["workspace"] = args.workspace
-    config["task"] = args.task
     return setup_worker_env(label, config)
 ```
 
@@ -168,10 +165,9 @@ def build_pipeline(
     if env.redis_client is None:
         raise RuntimeError("redis_client 未初始化：config 缺少 redis")
 
-    namespace = f"{env.config['workspace']}:{env.config['task']}"
     broker = build_broker(
         redis_client=env.redis_client,
-        namespace=namespace,
+        namespace=env.config["workspace"],
         group_name=group_name,
         claim_idle_ms=claim_idle_ms,
     )
@@ -204,7 +200,7 @@ def queue_for_node(node: str) -> str:
 - registry 统一注册所有 actor，保证某个 worker 收到下游 queue 也能识别 envelope。
 - `queue_for_node` 是部署入口和 queue 名之间的唯一映射；不要把映射散落到 worker 脚本。
 - 单节点项目同样保留 `Pipeline` dataclass 和 `queue_for_node`，只是当前映射只有一个节点。
-- namespace 必须稳定；推荐由 `workspace` + `task` 组成。
+- namespace 必须稳定；推荐直接使用 `workspace`。
 - 当前 task_queue 没有 actor name / retry 参数；不要传 `name=` 或 `max_retries=`。
 
 ## node 模式
@@ -287,8 +283,8 @@ if __name__ == "__main__":
 启动示例：
 
 ```bash
-uv run python worker/main.py --workspace my-workspace --task my-task --node first
-uv run python worker/main.py --workspace my-workspace --task my-task --node second
+uv run python worker/main.py --workspace my-workspace --node first
+uv run python worker/main.py --workspace my-workspace --node second
 ```
 
 `run_worker` 返回 `int`，不是 `ResultE`；不要 `unwrap(pipeline.broker.run_worker(...))`。
@@ -312,6 +308,7 @@ message_id = unwrap(pipeline.first.send(InputTask(blob_uri=args.blob_uri)))
 - 不要 `unwrap(broker.run_worker(...))`；`run_worker` 直接返回 int。
 - 不要新增 `worker/<node>.py` 文件；统一使用 `worker/main.py --node <node>`。
 - 不要把 broker 构建散落在 worker 脚本；统一放 `pipeline/registry.py`。
+- 不要为 `setup_worker_env` 注入 `task`；workspace 已经是统一隔离边界。
 - 不要让业务函数直接依赖全局 config；config 只在 CLI/env 装配层读取。
 
 ## 验证建议

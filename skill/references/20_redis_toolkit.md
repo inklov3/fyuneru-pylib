@@ -34,8 +34,8 @@ bind_redis_set_reader(client, set_name: str) -> RedisSetReader
 bind_redis_set_deleter(client, set_name: str) -> RedisSetDeleter
 # deleter(key: str) -> ResultE[None]  — srem
 
-calculate_checkpoint_key(workspace: str, task: str, label: str) -> str
-# 返回 "{workspace}:{task}:checkpoint:{label}"
+calculate_checkpoint_key(workspace: str, label: str) -> str
+# 返回 "{workspace}:checkpoint:{label}"
 ```
 
 ## Checkpoint 模式
@@ -49,7 +49,7 @@ from fyuneru.redis_toolkit import (
 )
 from fyuneru.result import unwrap
 
-ck = calculate_checkpoint_key(workspace="ws-a", task="etl", label="node-1")
+ck = calculate_checkpoint_key(workspace="ws-a", label="node-1")
 advance = bind_redis_set_writer(redis, set_name=ck)
 is_past = bind_redis_set_reader(redis, set_name=ck)
 delete  = bind_redis_set_deleter(redis, set_name=ck)

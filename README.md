@@ -154,9 +154,8 @@ redis = init_client_standalone(
 )()
 
 checkpoint_key = calculate_checkpoint_key(
-    checkpoint="step1",
-    task="etl",
-    worker="worker-a",
+    workspace="ws-a",
+    label="step1",
 )
 write_set = bind_redis_set_writer(redis, set_name=checkpoint_key)
 read_set = bind_redis_set_reader(redis, set_name=checkpoint_key)

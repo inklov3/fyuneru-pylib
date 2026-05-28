@@ -16,13 +16,13 @@ from fyuneru.worker import (
 
 setup_worker_env(label: str, config: dict[str, Any]) -> WorkerEnv
 # 构建 worker 环境，按可选资源装配。
-# redis / s3 / mongo / source_reader 只在 config 对应段存在时创建。
+# 要求 config["workspace"] 非空；redis / s3 / mongo / source_reader 只在 config 对应段存在时创建。
 
-calculate_checkpoint_key(workspace: str, task: str, label: str) -> str
-# "{workspace}:{task}:checkpoint:{label}"  —— 与 redis_toolkit 同名函数同义
+calculate_checkpoint_key(workspace: str, label: str) -> str
+# "{workspace}:checkpoint:{label}"  —— 与 redis_toolkit 同名函数同义
 
-calculate_result_key(workspace: str, task: str, key: str, artifact: str) -> str
-# "{workspace}/{task}/result/{key}/{artifact}.pkl"  —— S3 制品 key 约定
+calculate_result_key(workspace: str, key: str, artifact: str) -> str
+# "{workspace}/result/{key}/{artifact}.pkl"  —— S3 制品 key 约定
 ```
 
 ## 关键约束

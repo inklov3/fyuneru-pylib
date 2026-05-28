@@ -13,7 +13,7 @@ from redis.exceptions import ConnectionError as RedisConnectionError
 from redis.exceptions import ResponseError
 from redis.exceptions import TimeoutError as RedisTimeoutError
 
-from fyuneru.result import ResultE
+from fyuneru.result import Failure, ResultE, Success
 from fyuneru.task_queue.actor import (
     RegisteredActor,
     build_xq_fields,
@@ -38,6 +38,12 @@ from fyuneru.task_queue.types import ActorBinding, TaskHandler, TaskMessage
 from fyuneru.task_queue.worker import run_worker
 
 
+def unwrap_result(result: ResultE[str] | None) -> ResultE[str]:
+    if result is None:
+        return Failure(RuntimeError("pipeline 结果未写入"))
+    return result
+
+
 @dataclass
 class TaskQueueBroker:
     """Redis Streams 任务 broker，实现 :class:`BrokerOps` Protocol。"""
@@ -59,8 +65,7 @@ class TaskQueueBroker:
 
         register_script = cast(Any, self.redis_client).register_script
         self._scripts = {
-            name: register_script(script)
-            for name, script in load_lua_scripts().items()
+            name: register_script(script) for name, script in load_lua_scripts().items()
         }
 
     # ------------------------------------------------------------------
@@ -252,9 +257,7 @@ class TaskQueueBroker:
     def _enqueue_many_pipelined(
         self, messages: list[TaskMessage]
     ) -> list[ResultE[str]]:
-        from fyuneru.result import Failure, Success
-
-        results: list[ResultE[str]] = [cast(ResultE[str], None)] * len(messages)
+        results: list[Success[str] | Failure[Exception] | None] = [None] * len(messages)
         buckets: dict[str, list[int]] = {}
         prepared: list[tuple[str, dict[str, str]]] = []
         for index, message in enumerate(messages):
@@ -292,7 +295,7 @@ class TaskQueueBroker:
                     # 已经在 prep 阶段被标记为 Failure，不被 pipeline 的成功响应覆盖。
                     continue
                 if offset >= len(raw_ids):
-                    results[index] = Failure(
+                    results[index] = Failure[Exception](
                         RuntimeError("pipeline 返回结果数量与预期不符")
                     )
                     continue
@@ -304,7 +307,7 @@ class TaskQueueBroker:
                 message = messages[index]
                 self.notify_hook("on_enqueue", message.queue_name)
 
-        return results
+        return [unwrap_result(result) for result in results]
 
     def _read_raw(
         self,

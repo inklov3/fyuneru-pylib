@@ -49,8 +49,8 @@ def init_client_from_config(
     )
 
 
-def calculate_checkpoint_key(workspace: str, task: str, label: str) -> str:
-    return f"{workspace}:{task}:checkpoint:{label}"
+def calculate_checkpoint_key(workspace: str, label: str) -> str:
+    return f"{workspace}:checkpoint:{label}"
 
 
 class RedisSetReader(Protocol):
