@@ -449,6 +449,10 @@ broker = build_broker(redis_client, namespace=..., hooks=hooks)
 推荐用 `fyuneru.redis_toolkit.calculate_checkpoint_key` + `bind_redis_set_reader/writer`
 做 per-payload-key 的幂等检查（jump-cut 的 `is_past_checkpoint` / `advance_checkpoint` 即是此模式）。
 
+**Worker 日志约定**：下游 actor 入口建议先打印 payload，用于定位正在处理的消息；
+每个耗时阶段前打印简短阶段 marker（如 `<node>.stage read_source`），用于观察阶段耗时边界。
+阶段 marker 不要重复 URI / key 等大字段，消息定位依赖入口 payload 日志。
+
 **滚动发布的 schema 兼容性**：actor 未注册 / payload 与 dataclass 不匹配等"schema 错位"
 失败现在**静默进 xq**而不是杀 worker。这是必要妥协（避免一条坏消息卡死整个队列），
 但意味着滚动发布期间——producer 已升级、consumer 还是旧版——valid 消息会被旧

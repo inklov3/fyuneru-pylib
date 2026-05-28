@@ -174,10 +174,12 @@ def build_pipeline(
 
     @actor(broker=broker, queue_name="second")
     def second(payload: NextTask) -> None:
+        logger.info("second.received payload={}", payload)
         run_second(payload, env)
 
     @actor(broker=broker, queue_name="first")
     def first(payload: InputTask) -> None:
+        logger.info("first.received payload={}", payload)
         next_task = run_first(payload, env)
         unwrap(second.send(next_task))
 
@@ -225,19 +227,25 @@ def run_first(task: InputTask, env: WorkerEnv) -> NextTask:
     if env.is_past_checkpoint is None or env.advance_checkpoint is None:
         raise RuntimeError("checkpoint 未初始化：config 缺少 redis")
 
+    logger.info("first.stage checkpoint")
     if unwrap(env.is_past_checkpoint(task.blob_uri)):
-        logger.info("first.skip 已有 checkpoint")
+        logger.info("first.stage skip")
         return NextTask(blob_uri=task.blob_uri)
 
+    logger.info("first.stage read_source")
     data = unwrap(env.source_reader(task.blob_uri))
-    # 调用纯业务函数，写 S3/Mongo 等副作用
+    logger.info("first.stage write_result")
     unwrap(env.s3_writer("result/key", data))
+    logger.info("first.stage advance_checkpoint")
     unwrap(env.advance_checkpoint(task.blob_uri))
+    logger.info("first.stage done")
     return NextTask(blob_uri=task.blob_uri)
 ```
 
 规则：
 - 节点函数入口固定为 `payload + WorkerEnv`。
+- actor 入口先打印 payload，用于定位正在处理的消息；不要依赖 worker 内部异常日志猜测 payload。
+- 每个耗时阶段前打印简短阶段 marker（如 `<node>.stage read_source`），只用于观察阶段耗时边界，避免在每条阶段日志里重复 URI / key 等大字段。
 - 使用 `env.*` 前先显式 None 检查；`setup_worker_env` 不会因缺配置段自动失败。
 - 所有 `ResultE` 用 `unwrap()` 或 `is_failure()` 处理，不要直接读 `.value`。
 - handler 是 at-least-once，必须用 checkpoint 或业务唯一键保证幂等。

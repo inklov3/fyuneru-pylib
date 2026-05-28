@@ -32,6 +32,8 @@ description: fyuneru pipeline 项目搭建指南。当用户要用 fyuneru.task_
 - `WorkerEnv` 是 pipeline 项目的标准入口，不要因为当前只有一个节点就绕开它。
 - `src/pipeline` 负责装配；`src/pyproject` 负责纯业务；`worker/main.py --node <node>` 是唯一 worker 入口。
 - 当前 API 不支持 actor `name=` / `max_retries=`；不要从旧项目照搬。
+- actor 入口先打印 payload；耗时步骤前打印简短阶段 marker，用于定位毒丸和观察阶段耗时。
+- 阶段 marker 不要重复 URI / key 等大字段；消息定位依赖入口 payload 日志。
 - 不要新增 `_fyuneru_patch.py`；当前 fyuneru 已修复旧 redis-py 兼容问题。
 - `run_worker` 返回 `int`，不要 `unwrap(run_worker(...))`。
 
