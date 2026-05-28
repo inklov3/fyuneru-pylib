@@ -148,7 +148,7 @@ If you change config or S3 behavior, keep those phases conceptually separate: me
 
 It is not a new backend; it wires existing toolkits into one `WorkerEnv` bundle:
 
-- validates `label` plus top-level `workspace`
+- validates `label` plus explicitly passed `workspace`
 - optionally creates Redis checkpoint helpers when `redis` config exists
 - optionally creates S3 writer/reader when `s3` config exists
 - optionally creates `blob://` source reader when `s3_sources` exists

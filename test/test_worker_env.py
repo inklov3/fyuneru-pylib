@@ -70,9 +70,8 @@ def test_calculate_keys() -> None:
 def test_setup_worker_env_without_optional_resources() -> None:
     env = setup_worker_env(
         label="node-1",
-        config={
-            "workspace": "ws-a",
-        },
+        config={},
+        workspace="ws-a",
     )
 
     assert env.redis_client is None
@@ -120,7 +119,6 @@ def test_setup_worker_env_with_all_resources() -> None:
         env = setup_worker_env(
             label="node-1",
             config={
-                "workspace": "ws-a",
                 "redis": {"host": "127.0.0.1", "port": 6379, "db": 0},
                 "s3": {
                     "endpoint": "https://s3.example.com",
@@ -131,6 +129,7 @@ def test_setup_worker_env_with_all_resources() -> None:
                 "s3_sources": [],
                 "mongo": {"uri": "mongodb://127.0.0.1:27017", "db": "db-a"},
             },
+            workspace="ws-a",
         )
 
         assert env.redis_client is fake_redis

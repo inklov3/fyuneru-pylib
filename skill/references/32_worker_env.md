@@ -14,9 +14,9 @@ from fyuneru.worker import (
     calculate_result_key,
 )
 
-setup_worker_env(label: str, config: dict[str, Any]) -> WorkerEnv
+setup_worker_env(label: str, config: dict[str, Any], *, workspace: str) -> WorkerEnv
 # 构建 worker 环境，按可选资源装配。
-# 要求 config["workspace"] 非空；redis / s3 / mongo / source_reader 只在 config 对应段存在时创建。
+# 要求显式传入非空 workspace；redis / s3 / mongo / source_reader 只在 config 对应段存在时创建。
 
 calculate_checkpoint_key(workspace: str, label: str) -> str
 # "{workspace}:checkpoint:{label}"  —— 与 redis_toolkit 同名函数同义

@@ -341,9 +341,9 @@ from fyuneru.worker import (
     setup_worker_env,
 )
 
-setup_worker_env(label: str, config: dict[str, Any]) -> WorkerEnv
+setup_worker_env(label: str, config: dict[str, Any], *, workspace: str) -> WorkerEnv
 # Builds worker environment with optional resources.
-# redis/s3/mongo/source_reader are created only if config sections exist.
+# workspace is passed explicitly; redis/s3/mongo/source_reader are created only if config sections exist.
 
 calculate_checkpoint_key(workspace: str, label: str) -> str
 # Returns "{workspace}:checkpoint:{label}".

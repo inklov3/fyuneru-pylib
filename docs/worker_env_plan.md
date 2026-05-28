@@ -53,7 +53,7 @@ class WorkerEnv:
 
 ## 3. 初始化流程（必须按顺序）
 
-对齐 `setup_worker_env(label, config)` 语义。
+对齐 `setup_worker_env(label, config, workspace=workspace)` 语义。
 
 1. 校验基础标识：`workspace`、`label` 非空。
 2. 若存在 `redis` 配置：初始化 redis client。
@@ -69,7 +69,12 @@ class WorkerEnv:
 建议接口：
 
 ```python
-def setup_worker_env(label: str, config: dict[str, Any]) -> WorkerEnv:
+def setup_worker_env(
+    label: str,
+    config: dict[str, Any],
+    *,
+    workspace: str,
+) -> WorkerEnv:
     ...
 ```
 
@@ -159,8 +164,8 @@ from fyuneru.result import unwrap
 from fyuneru.worker import calculate_result_key, setup_worker_env
 from fyuneru.mongo_toolkit import bind_collection, ensure_index
 
+workspace = "ws-a"
 config = {
-    "workspace": "ws-a",
     "redis": {"host": "127.0.0.1", "port": 6379, "db": 0},
     "s3": {
         "endpoint": "https://s3.example.com",
@@ -171,11 +176,13 @@ config = {
     "mongo": {"uri": "mongodb://127.0.0.1:27017", "db": "fyuneru"},
 }
 
-env = setup_worker_env(label="node-demux", config=config)
+env = setup_worker_env(
+    label="node-demux", config=config, workspace=workspace
+)
 
 result_key_builder = partial(
     calculate_result_key,
-    workspace=config["workspace"],
+    workspace=workspace,
 )
 
 result_key = result_key_builder(
@@ -216,7 +223,7 @@ if env.mongo_db is not None:
    - 定义 `WorkerEnv` dataclass（可选资源字段）。
 
 2. 新增 `src/fyuneru/worker/env.py`
-   - 实现 `setup_worker_env(label, config)`。
+   - 实现 `setup_worker_env(label, config, *, workspace)`。
    - 实现 `calculate_result_key(workspace, key, artifact)`。
    - 做 `workspace/label` 参数校验。
 

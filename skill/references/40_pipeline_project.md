@@ -46,10 +46,9 @@ dependencies = [
 
 ## 配置要求
 
-`setup_worker_env(label, config)` 要求 config 至少带：
+`setup_worker_env(label, config, workspace=WORKSPACE)` 要求按需配置资源段：
 
 ```yaml
-workspace: my-workspace
 redis:
   host: localhost
   port: 6379
@@ -69,7 +68,7 @@ s3_sources:
   secret_access_key: xxx
 ```
 
-`workspace` 可以由 CLI 或项目常量注入到 `read_config(...)` 返回的 dict；它是队列 namespace、checkpoint 与结果路径的统一隔离边界。
+`workspace` 是队列 namespace、checkpoint 与结果路径的统一隔离边界；推荐作为项目常量显式传给 `setup_worker_env`，不要放进 YAML 或暴露为随意可改的 CLI 参数。
 
 ## cli.py 模式
 
@@ -84,6 +83,8 @@ from fyuneru.logger import LogLevel, configure_logger
 from fyuneru.result import unwrap
 from fyuneru.worker import WorkerEnv, setup_worker_env
 
+from pyproject.constants import WORKSPACE
+
 
 def parse_common_args(
     description: str,
@@ -92,7 +93,6 @@ def parse_common_args(
 ) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=description)
     parser.add_argument("--config", type=Path, default=Path("config.yml"))
-    parser.add_argument("--workspace", required=True)
     parser.add_argument("--group", default="default")
     parser.add_argument("--claim-idle-ms", type=int, default=None)
     parser.add_argument("--consumer", default=None)
@@ -106,8 +106,7 @@ def parse_common_args(
 def setup_pipeline_env(label: str, args: argparse.Namespace) -> WorkerEnv:
     unwrap(configure_logger(level=args.log_level))
     config = read_config(args.config)
-    config["workspace"] = args.workspace
-    return setup_worker_env(label, config)
+    return setup_worker_env(label, config, workspace=WORKSPACE)
 ```
 
 ## contracts.py 模式
@@ -147,6 +146,7 @@ from loguru import logger
 from pipeline.contracts import InputTask, NextTask
 from pipeline.first_node import run_first
 from pipeline.second_node import run_second
+from pyproject.constants import WORKSPACE
 
 
 @dataclass(frozen=True)
@@ -167,7 +167,7 @@ def build_pipeline(
 
     broker = build_broker(
         redis_client=env.redis_client,
-        namespace=env.config["workspace"],
+        namespace=WORKSPACE,
         group_name=group_name,
         claim_idle_ms=claim_idle_ms,
     )
@@ -283,8 +283,8 @@ if __name__ == "__main__":
 启动示例：
 
 ```bash
-uv run python worker/main.py --workspace my-workspace --node first
-uv run python worker/main.py --workspace my-workspace --node second
+uv run python worker/main.py --node first
+uv run python worker/main.py --node second
 ```
 
 `run_worker` 返回 `int`，不是 `ResultE`；不要 `unwrap(pipeline.broker.run_worker(...))`。

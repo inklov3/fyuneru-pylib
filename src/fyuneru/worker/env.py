@@ -17,12 +17,17 @@ def calculate_result_key(
     return f"{workspace_name}/result/{unit_key}/{artifact_name}.pkl"
 
 
-def setup_worker_env(label: str, config: dict[str, Any]) -> WorkerEnv:
-    label_name, workspace = _validate_base(label, config)
+def setup_worker_env(
+    label: str,
+    config: dict[str, Any],
+    *,
+    workspace: str,
+) -> WorkerEnv:
+    label_name, workspace_name = _validate_base(label, config, workspace)
 
     redis_client, advance_checkpoint, is_past_checkpoint = _build_redis(
         config=config,
-        workspace=workspace,
+        workspace=workspace_name,
         label=label_name,
     )
     s3_writer, s3_reader = _build_s3(config)
@@ -42,12 +47,16 @@ def setup_worker_env(label: str, config: dict[str, Any]) -> WorkerEnv:
     )
 
 
-def _validate_base(label: str, config: dict[str, Any]) -> tuple[str, str]:
+def _validate_base(
+    label: str,
+    config: dict[str, Any],
+    workspace: str,
+) -> tuple[str, str]:
     if not isinstance(config, dict):
         raise TypeError("config 必须是字典")
     label_name = _require_non_empty_text("label", label)
-    workspace = _require_non_empty_text("workspace", config.get("workspace"))
-    return label_name, workspace
+    workspace_name = _require_non_empty_text("workspace", workspace)
+    return label_name, workspace_name
 
 
 def _build_redis(
