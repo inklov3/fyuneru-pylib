@@ -233,9 +233,12 @@ def run_first(task: InputTask, env: WorkerEnv) -> NextTask:
         return NextTask(blob_uri=task.blob_uri)
 
     logger.info("first.stage read_source")
-    data = unwrap(env.source_reader(task.blob_uri))
-    logger.info("first.stage write_result")
-    unwrap(env.s3_writer("result/key", data))
+
+    def write_result(body):
+        logger.info("first.stage write_result")
+        unwrap(env.s3_writer("result/key", body))
+
+    unwrap(env.source_reader(task.blob_uri, write_result))
     logger.info("first.stage advance_checkpoint")
     unwrap(env.advance_checkpoint(task.blob_uri))
     logger.info("first.stage done")

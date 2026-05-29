@@ -1,66 +1,40 @@
-# S3 多源协议设计
+# S3 多源协议
 
-## 协议格式
+`fyuneru.s3_source` 通过 `blob://source_id/key` URI 协议透明访问多个 S3 源。
 
-```
-blob://桶id/object/key/path
-```
-
-- **协议名**: `blob`（通用二进制大对象语义，简短清晰）
-- **桶id**: 用户在主配置 YAML 的 `s3_sources` 段中自定义的标识符（不一定等于实际桶名）
-- **对象key**: S3 对象的完整 key，支持 `/` 分隔的路径
-
-## 配置文件
-
-在主配置 YAML 中增加 `s3_sources` 段（与 `redis`、`s3` 等同级）：
+## 配置
 
 ```yaml
 s3_sources:
-- source_id: my-images              # 桶id（自定义标识，对应 blob://my-images/...）
-  endpoint: "https://s3.example.com"
-  bucket: "actual-bucket-name"      # 实际的 S3 桶名
-  access_key_id: "AK..."
-  secret_access_key: "SK..."
-  region_name: "us-east-1"          # 可选
+- source_id: my-images
+  endpoint: https://s3.example.com
+  bucket: actual-bucket-name
+  access_key_id: xxx
+  secret_access_key: xxx
+  region_name: us-east-1
 
 - source_id: backup-store
-  endpoint: "https://s3.backup.com"
-  bucket: "backup-bucket"
-  access_key_id: "AK..."
-  secret_access_key: "SK..."
+  endpoint: https://s3.backup.com
+  bucket: backup-bucket
+  access_key_id: xxx
+  secret_access_key: xxx
 ```
 
-每个源条目包含：
+## URI 格式
 
-| 字段 | 必填 | 说明 |
-|------|------|------|
-| `source_id` | 是 | 自定义标识符，用于 `blob://` URI 的桶id 部分 |
-| `endpoint` | 是 | S3 兼容服务端点 |
-| `bucket` | 是 | 实际桶名 |
-| `access_key_id` | 是 | 访问密钥 ID |
-| `secret_access_key` | 是 | 访问密钥 |
-| `region_name` | 否 | 区域名称 |
-
-### Pod YAML 增量覆盖
-
-`load_source_registry` 接收已合并的配置字典；可先用 `read_config_with_override` 处理 `base.yml + pod.yml`：
-
-```python
-config = read_config_with_override(
-    Path("config.yml"),
-    Path("pod.yml"),
-)
-registry = load_source_registry(config)
+```text
+blob://source_id/path/to/object
 ```
 
-合并时 `s3_sources` 列表先按追加处理，再由 `load_source_registry` 按 `source_id` 去重；若重复，后者覆盖前者（即 Pod 层生效）。
+- `source_id` 对应配置里的 `source_id`
+- `path/to/object` 是源 bucket 内的 object key
 
 ## 解析流程
 
-1. 解析 URI → 提取桶id + 对象key
-2. 用桶id查找配置中 `s3_sources` 列表的对应条目
+1. 解析 URI → 提取 source_id + object key
+2. 用 source_id 查找配置中 `s3_sources` 的对应条目
 3. 用源配置初始化 S3 client（复用 `s3_toolkit.init_client`）
-4. 调用 `bind_s3_reader` 生成读取函数，执行读取
+4. 调用 `bind_s3_reader` 生成受控消费式 reader，执行读取
 
 ## 使用示例
 
@@ -68,12 +42,18 @@ registry = load_source_registry(config)
 from pathlib import Path
 
 from fyuneru.config import read_config_with_override
+from fyuneru.result import unwrap
 from fyuneru.s3_source import bind_source_reader, load_source_registry
 
 config = read_config_with_override(Path("config.yml"))
 registry = load_source_registry(config)
 read = bind_source_reader(registry)
 
-result = read("blob://my-images/photos/2024/img001.jpg")
-# result: Result[bytes, Exception]
+def consume(body):
+    return body.read()
+
+result = read("blob://my-images/photos/2024/img001.jpg", consume)
+data = unwrap(result)
 ```
+
+`consume` 必须同步消费流，不要保存或返回 body 给外部继续读取。

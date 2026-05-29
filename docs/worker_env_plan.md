@@ -34,7 +34,7 @@ class WorkerEnv:
     redis_client: Redis | RedisCluster | None
     s3_writer: ObjectStorageWriter | None
     s3_reader: ObjectStorageReader | None
-    source_reader: Callable[[str], ResultE[bytes]] | None
+    source_reader: ObjectStorageReader | None
     mongo_db: Database | None
     advance_checkpoint: Callable[[str], ResultE[None]] | None
     is_past_checkpoint: Callable[[str], ResultE[bool]] | None
@@ -110,9 +110,9 @@ def calculate_result_key(
 - `artifact` 用于支持同一 worker 输出/读取多种结果键。
 - 禁止节点自行定义偏离该规则的结果路径。
 
-### 4.3 源回退读取语义
+### 4.3 源读取语义
 
-当 `s3_reader(key)` 失败且 `source_reader` 存在时，允许回退读取源数据。
+`s3_reader` 的 key 是目标 S3 bucket 内 object key；`source_reader` 的 key 是 `blob://source-id/path` 源 URI。二者都使用受控消费式读取：`reader(key_or_uri, consume)`。业务需要 fallback 时，应显式判断 `s3_reader` 失败后再调用 `source_reader`。
 
 ### 4.4 错误显式化
 

@@ -8,6 +8,50 @@ import fyuneru.s3_source as s3_source_module
 from fyuneru.config import read_config_with_override
 from fyuneru.result import Failure, Success, is_failure, unwrap
 from fyuneru.s3_source import bind_source_reader, load_source_registry, parse_blob_uri
+from fyuneru.s3_toolkit import bind_s3_reader, bind_s3_writer
+
+
+class FakeBody:
+    def __init__(self, data: bytes = b"", fail_on_read: Exception | None = None):
+        self._stream = BytesIO(data)
+        self._fail_on_read = fail_on_read
+        self.closed = False
+
+    def read(self, amt: int | None = None) -> bytes:
+        if self._fail_on_read is not None:
+            raise self._fail_on_read
+        if amt is None:
+            return self._stream.read()
+        return self._stream.read(amt)
+
+    def close(self) -> None:
+        self.closed = True
+
+
+class FakeS3Client:
+    def __init__(
+        self,
+        body: FakeBody | None = None,
+        get_error: Exception | None = None,
+    ):
+        self.body = body
+        self.get_error = get_error
+        self.get_object_kwargs: dict | None = None
+        self.uploaded: tuple[str, str, bytes] | None = None
+
+    def get_object(self, **kwargs):
+        self.get_object_kwargs = kwargs
+        if self.get_error is not None:
+            raise self.get_error
+        return {"Body": self.body}
+
+    def upload_fileobj(self, body, bucket: str, key: str) -> None:
+        self.uploaded = (bucket, key, body.read())
+
+
+class BrokenFile:
+    def read(self) -> bytes:
+        raise OSError("read failed")
 
 
 def test_parse_blob_uri_normal():
@@ -124,6 +168,78 @@ def test_load_source_registry_validate_required_fields():
         assert "缺少字段" in str(e)
 
 
+def test_bind_s3_reader_consumes_and_closes_body():
+    body = FakeBody(b"source-data")
+    client = FakeS3Client(body=body)
+    read = bind_s3_reader(client, "bucket-a")
+
+    result = read("path.txt", lambda stream: stream.read())
+
+    assert unwrap(result) == b"source-data"
+    assert body.closed
+    assert client.get_object_kwargs == {"Bucket": "bucket-a", "Key": "path.txt"}
+
+
+def test_bind_s3_reader_wraps_get_object_error():
+    client = FakeS3Client(get_error=RuntimeError("get failed"))
+    read = bind_s3_reader(client, "bucket-a")
+
+    result = read("path.txt", lambda stream: stream.read())
+
+    assert is_failure(result)
+    assert isinstance(result, Failure)
+    assert "get failed" in str(result.error)
+
+
+def test_bind_s3_reader_wraps_body_read_error_and_closes_body():
+    body = FakeBody(fail_on_read=OSError("network failed"))
+    client = FakeS3Client(body=body)
+    read = bind_s3_reader(client, "bucket-a")
+
+    result = read("path.txt", lambda stream: stream.read())
+
+    assert is_failure(result)
+    assert isinstance(result, Failure)
+    assert "network failed" in str(result.error)
+    assert body.closed
+
+
+def test_bind_s3_reader_wraps_consumer_error_and_closes_body():
+    body = FakeBody(b"source-data")
+    client = FakeS3Client(body=body)
+    read = bind_s3_reader(client, "bucket-a")
+
+    def consume(_stream):
+        raise ValueError("consume failed")
+
+    result = read("path.txt", consume)
+
+    assert is_failure(result)
+    assert isinstance(result, Failure)
+    assert "consume failed" in str(result.error)
+    assert body.closed
+
+
+def test_bind_s3_writer_uploads_fileobj():
+    client = FakeS3Client()
+    write = bind_s3_writer(client, "bucket-a")
+
+    unwrap(write("path.txt", BytesIO(b"payload")))
+
+    assert client.uploaded == ("bucket-a", "path.txt", b"payload")
+
+
+def test_bind_s3_writer_wraps_body_read_error():
+    client = FakeS3Client()
+    write = bind_s3_writer(client, "bucket-a")
+
+    result = write("path.txt", BrokenFile())
+
+    assert is_failure(result)
+    assert isinstance(result, Failure)
+    assert "read failed" in str(result.error)
+
+
 def test_bind_source_reader_with_unknown_bucket():
     read = bind_source_reader(
         {
@@ -136,18 +252,25 @@ def test_bind_source_reader_with_unknown_bucket():
             }
         }
     )
-    result = read("blob://unknown/path.txt")
+    result = read("blob://unknown/path.txt", lambda body: body.read())
     assert is_failure(result)
     assert isinstance(result, Failure)
     assert "unsupport bucket id" in str(result.error)
 
 
-def test_bind_source_reader_returns_stream():
+def test_bind_source_reader_consumes_stream():
     original_build_reader_for = s3_source_module.build_reader_for
+    called: dict[str, str] = {}
+
+    def fake_build_reader_for(_source_cfg):
+        def fake_reader(key, consume):
+            called["key"] = key
+            return Success(consume(BytesIO(b"source-data")))
+
+        return fake_reader
+
     try:
-        s3_source_module.build_reader_for = lambda _source_cfg: (
-            lambda _key: Success(BytesIO(b"source-data"))
-        )
+        s3_source_module.build_reader_for = fake_build_reader_for
         read = bind_source_reader(
             {
                 "known": {
@@ -159,8 +282,11 @@ def test_bind_source_reader_returns_stream():
                 }
             }
         )
-        with unwrap(read("blob://known/path.txt")) as body:
-            assert body.read() == b"source-data"
+        assert (
+            unwrap(read("blob://known/path.txt", lambda body: body.read()))
+            == b"source-data"
+        )
+        assert called["key"] == "path.txt"
     finally:
         s3_source_module.build_reader_for = original_build_reader_for
 
@@ -174,6 +300,12 @@ if __name__ == "__main__":
     test_parse_blob_uri_no_key()
     test_load_source_registry_with_override()
     test_load_source_registry_validate_required_fields()
+    test_bind_s3_reader_consumes_and_closes_body()
+    test_bind_s3_reader_wraps_get_object_error()
+    test_bind_s3_reader_wraps_body_read_error_and_closes_body()
+    test_bind_s3_reader_wraps_consumer_error_and_closes_body()
+    test_bind_s3_writer_uploads_fileobj()
+    test_bind_s3_writer_wraps_body_read_error()
     test_bind_source_reader_with_unknown_bucket()
-    test_bind_source_reader_returns_stream()
-    print("所有 parse_blob_uri 测试通过")
+    test_bind_source_reader_consumes_stream()
+    print("所有 s3_source 测试通过")

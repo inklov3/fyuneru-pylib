@@ -109,11 +109,11 @@ def test_setup_worker_env_with_all_resources() -> None:
             lambda key, body: Success(written_data.setdefault(key, body.read()))
         )
         worker_env_module.s3_toolkit.bind_s3_reader = lambda _client, _bucket: (
-            lambda _key: Success(BytesIO(b"s3-data"))
+            lambda _key, consume: Success(consume(BytesIO(b"s3-data")))
         )
         worker_env_module.s3_source.load_source_registry = lambda _config: {"src": {}}
         worker_env_module.s3_source.bind_source_reader = lambda _registry: (
-            lambda _uri: Success(BytesIO(b"source-data"))
+            lambda _uri, consume: Success(consume(BytesIO(b"source-data")))
         )
         worker_env_module.mongo_toolkit.init_database_from_config = lambda _config: (
             lambda: fake_db
@@ -147,10 +147,11 @@ def test_setup_worker_env_with_all_resources() -> None:
         assert unwrap(env.is_past_checkpoint("item-1")) is True
         unwrap(env.s3_writer("foo", BytesIO(b"payload")))
         assert written_data["foo"] == b"payload"
-        with unwrap(env.s3_reader("foo")) as body:
-            assert body.read() == b"s3-data"
-        with unwrap(env.source_reader("blob://src/object-1")) as body:
-            assert body.read() == b"source-data"
+        assert unwrap(env.s3_reader("foo", lambda body: body.read())) == b"s3-data"
+        assert (
+            unwrap(env.source_reader("blob://src/object-1", lambda body: body.read()))
+            == b"source-data"
+        )
     finally:
         worker_env_module.redis_toolkit.init_client_from_config = original_redis_init
         worker_env_module.s3_toolkit.init_client_from_config = original_s3_init

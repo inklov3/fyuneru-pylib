@@ -4,17 +4,23 @@ S3 多源协议：通过 blob://桶id/key 统一访问多个 S3 源
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import cast
+from typing import TypeVar, cast
 from urllib.parse import urlparse
 
-from botocore.response import StreamingBody
 from loguru import logger
 
 from fyuneru.result import Failure, ResultE, safe, unwrap
-from fyuneru.s3_toolkit import ObjectStorageReader, bind_s3_reader, init_client
+from fyuneru.s3_toolkit import (
+    ObjectStorageReader,
+    ReadableBinaryStream,
+    bind_s3_reader,
+    init_client,
+)
 
 BLOB_SCHEME = "blob"
+T = TypeVar("T")
 
 
 def parse_blob_uri(uri: str) -> tuple[str, str]:
@@ -100,7 +106,11 @@ class MultiSourceReader:
             self._readers[bucket_id] = build_reader_for(source_cfg)
         return self._readers[bucket_id]
 
-    def read(self, uri: str) -> ResultE[StreamingBody]:
+    def read(
+        self,
+        uri: str,
+        consume: Callable[[ReadableBinaryStream], T],
+    ) -> ResultE[T]:
         parsed_result = _safe_parse_uri(uri)
         if isinstance(parsed_result, Failure):
             return parsed_result
@@ -111,7 +121,7 @@ class MultiSourceReader:
             return reader_result
 
         reader = unwrap(reader_result)
-        return reader(key)
+        return reader(key, consume)
 
 
 @safe
@@ -129,7 +139,7 @@ def _safe_reader_for(
 def bind_source_reader(
     registry: dict[str, dict],
 ) -> ObjectStorageReader:
-    """返回一个函数：接受 blob:// URI，返回 ResultE[StreamingBody]。
+    """返回一个受控消费式 blob:// URI reader。
 
     内部按需懒初始化 client + reader，缓存已创建的实例。
     """

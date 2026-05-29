@@ -169,6 +169,8 @@ unwrap(delete_set("item-001"))
 ### S3 对象存储
 
 ```python
+from io import BytesIO
+
 from fyuneru.result import unwrap
 from fyuneru.s3_toolkit import (
     bind_s3_deleter,
@@ -191,8 +193,8 @@ read = bind_s3_reader(client, bucket="my-bucket")
 delete = bind_s3_deleter(client, bucket="my-bucket")
 lister = bind_s3_lister(client, bucket="my-bucket")
 
-unwrap(write("demo.txt", b"hello"))
-data = unwrap(read("demo.txt"))
+unwrap(write("demo.txt", BytesIO(b"hello")))
+data = unwrap(read("demo.txt", lambda body: body.read()))
 keys = unwrap(lister(prefix="data/", suffix=".parquet"))
 unwrap(delete("demo.txt"))
 ```
@@ -220,7 +222,7 @@ config = read_config_with_override(
 registry = load_source_registry(config)
 read = bind_source_reader(registry)
 
-data = unwrap(read("blob://my-images/photos/2024/img001.jpg"))
+data = unwrap(read("blob://my-images/photos/2024/img001.jpg", lambda body: body.read()))
 ```
 
 ### MongoDB

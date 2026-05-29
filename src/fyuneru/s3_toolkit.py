@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-import weakref
-from collections.abc import Callable, Iterator
-from typing import TYPE_CHECKING, Any, BinaryIO, Protocol, cast
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any, BinaryIO, Protocol, TypeVar, cast, overload
 
 from boto3 import Session
 from botocore.config import Config
-from botocore.response import StreamingBody
 
 from fyuneru.config import parse_s3_config
 from fyuneru.result import ResultE, safe
@@ -14,17 +12,31 @@ from fyuneru.result import ResultE, safe
 if TYPE_CHECKING:
     from mypy_boto3_s3.client import S3Client
 
+T = TypeVar("T")
+
+
+class ReadableBinaryStream(Protocol):
+    @overload
+    def read(self, amt: int) -> bytes: ...
+
+    @overload
+    def read(self, amt: None = None) -> bytes: ...
+
+    def read(self, amt: int | None = None) -> bytes: ...
+
+    def close(self) -> None: ...
+
 
 class ObjectStorageWriter(Protocol):
     def __call__(self, key: str, body: BinaryIO) -> ResultE[None]: ...
 
 
 class ObjectStorageReader(Protocol):
-    def __call__(self, key: str) -> ResultE[StreamingBody]: ...
-
-
-class ObjectStorageChunkedReader(Protocol):
-    def __call__(self, key: str) -> ResultE[Iterator[bytes]]: ...
+    def __call__(
+        self,
+        key: str,
+        consume: Callable[[ReadableBinaryStream], T],
+    ) -> ResultE[T]: ...
 
 
 class ObjectStorageDeleter(Protocol):
@@ -126,49 +138,21 @@ def bind_s3_writer(client: S3Client, bucket: str) -> ObjectStorageWriter:
 
 
 def bind_s3_reader(client: S3Client, bucket: str) -> ObjectStorageReader:
-    """以 :class:`StreamingBody` 形式返回对象，调用方负责 ``close()``。"""
+    """返回受控消费式对象 reader，消费函数必须同步读取流。"""
 
     @safe
-    def read_object(key: str) -> StreamingBody:
+    def read_object(
+        key: str,
+        consume: Callable[[ReadableBinaryStream], T],
+    ) -> T:
         response = client.get_object(Bucket=bucket, Key=key)
-        return response["Body"]
+        body = cast(ReadableBinaryStream, response["Body"])
+        try:
+            return consume(body)
+        finally:
+            body.close()
 
     return read_object
-
-
-def bind_s3_chunked_reader(
-    client: S3Client,
-    bucket: str,
-    chunk_size: int = 1024 * 1024,
-) -> ObjectStorageChunkedReader:
-    """按固定块大小迭代 S3 对象，迭代器消耗完毕后自动关闭底层连接。
-
-    返回的迭代器只能消费一次；遍历到末尾或显式 ``close()`` 后再次迭代会得到空序列。
-    若调用方拿到迭代器后从未启动遍历，generator finally 不会触发；这里额外挂一个
-    :func:`weakref.finalize` 作为兜底，迭代器被 GC 时也会关闭 body。
-    """
-    if chunk_size <= 0:
-        raise ValueError("chunk_size 必须大于 0")
-
-    @safe
-    def open_chunks(key: str) -> Iterator[bytes]:
-        response = client.get_object(Bucket=bucket, Key=key)
-        body: StreamingBody = response["Body"]
-        generator = _iter_chunks(body, chunk_size)
-        weakref.finalize(generator, body.close)
-        return generator
-
-    return open_chunks
-
-
-def _iter_chunks(body: StreamingBody, chunk_size: int) -> Iterator[bytes]:
-    try:
-        for chunk in body.iter_chunks(chunk_size=chunk_size):
-            if not chunk:
-                continue
-            yield chunk
-    finally:
-        body.close()
 
 
 def bind_s3_deleter(client: S3Client, bucket: str) -> ObjectStorageDeleter:

@@ -77,12 +77,12 @@ eta 延迟调度与 attempt/retry 自维护重试已在 2026-05-26 版本彻底�
 
 ### R-7 s3 reader 流式接口
 
-- **位置**：`src/fyuneru/s3_toolkit.py:123-133`
-- **现状**：`body.read()` 全量读入内存，jump-cut 视频场景随时 OOM。
+- **位置**：`src/fyuneru/s3_toolkit.py`
+- **现状**：裸 `StreamingBody` 或懒 `Iterator[bytes]` 会让读取期错误逃逸 `ResultE` 边界。
 - **改法**：
-  1. 保留 `bind_s3_reader`（bytes 接口），但**改语义**："仅适合小对象"，docstring 显式注明大小上限建议。
-  2. 新增 `bind_s3_stream_reader(client, bucket) -> Callable[[str], ResultE[StreamingBody]]`，由调用方负责 `with closing(body): for chunk in body.iter_chunks(chunk_size): ...`。
-  3. 第三个选项：`bind_s3_chunked_reader(client, bucket, chunk_size=8 * 1024 * 1024) -> Callable[[str], ResultE[Iterator[bytes]]]`，封装成 generator，调用方 `for chunk in reader(key): ...`，无需感知 `StreamingBody`。如果只能选一个，**优先 chunked**，因为更符合本库"composable 函数"风格。
+  1. `bind_s3_reader` 改为受控消费式 API：`reader(key, consume) -> ResultE[T]`。
+  2. `get_object`、`consume(body)`、`body.close()` 都在 `@safe` 内执行。
+  3. 不提供默认 lazy chunk reader；需要按块读取时在 `consume` 内循环 `body.read(chunk_size)`。
 
 ---
 
@@ -198,7 +198,7 @@ R-1 合并并发 0.2 后，jump-cut 一次性升级：删除 `_fyuneru_patch.py`
 4. **R-4**：actor 始终抛错、`max_retries=3`、`retry_backoff_ms_base=10`，多轮跑断言 `eta` 字段指数递增、attempt=3 后进 xq。
 5. **R-5**：拆分后所有顶层函数有单元测试；`bind_source_reader` 行为不变（回归用例）。
 6. **R-6**：grep 全仓 + jump-cut 仓库确认无 `bytes_to_object` / `object_to_bytes` 残留调用。
-7. **R-7**：用 `bind_s3_chunked_reader` 读 100MB 对象，监控进程 RSS 不超过 chunk_size × 2。
+7. **R-7**：用 `bind_s3_reader` 的 `consume` 按块读 100MB 对象，监控进程 RSS 不超过 chunk_size × 2。
 8. **O-1**：每个 hook 都有单测，包括 callback 抛错不影响主流程。
 9. **O-2**：100 条永远失败消息跑完，`XLEN xq` ≤ `xq_maxlen + 容差`。
 10. **O-3**：真 redis-py enqueue 1000 条，对比 pipeline 前后耗时。

@@ -160,11 +160,9 @@ Requires: `fyuneru[s3]`
 
 ```python
 from fyuneru.s3_toolkit import (
-    bind_s3_chunked_reader,
     bind_s3_deleter,
     bind_s3_lister,
     bind_s3_reader,
-    bind_s3_stream_reader,
     bind_s3_writer,
     init_client,
 )
@@ -192,28 +190,12 @@ init_workspace_from_config(config: dict) -> Callable
 # 必须含 s3.bucket，缺失立刻抛 KeyError。
 
 bind_s3_writer(client: S3Client, bucket: str) -> ObjectStorageWriter
-# writer(key: str, body: bytes) -> ResultE[None]  — put_object
+# writer(key: str, body: BinaryIO) -> ResultE[None]  — upload_fileobj
 
 bind_s3_reader(client: S3Client, bucket: str) -> ObjectStorageReader
-# reader(key: str) -> ResultE[bytes]               — get_object
-# 警告：全量读入内存，不适合大文件，大文件请用 bind_s3_chunked_reader 或
-# bind_s3_stream_reader，否则随时会 OOM。
-
-bind_s3_chunked_reader(
-    client: S3Client,
-    bucket: str,
-    chunk_size: int = 1024 * 1024,
-) -> ObjectStorageChunkedReader
-# reader(key: str) -> ResultE[Iterator[bytes]]
-# 按 chunk_size 迭代对象内容，迭代器消费完毕或抛错时自动 close 底层 socket。
-# 返回的迭代器只能消费一次。chunk_size 必须 > 0。
-
-bind_s3_stream_reader(
-    client: S3Client, bucket: str
-) -> ObjectStorageStreamReader
-# reader(key: str) -> ResultE[StreamingBody]
-# 把 boto3 的 StreamingBody 直接交给调用方，适合需要把 body 转交给非 boto3
-# 库（视频解码器等）的场景。调用方必须配合 with closing(body): 使用，避免 socket 泄漏。
+# reader(key: str, consume: Callable[[ReadableBinaryStream], T]) -> ResultE[T]
+# get_object、consume(body)、body.close() 都在 @safe 边界内执行。
+# consume 必须同步消费流，不要保存或返回 body 给外部继续读取。
 
 bind_s3_deleter(client: S3Client, bucket: str) -> ObjectStorageDeleter
 # deleter(key: str) -> ResultE[None]               — delete_object
@@ -250,8 +232,9 @@ load_source_registry(
 # any required field is missing, or source_id is not a non-empty string.
 # When duplicate source_id is found, logs warning and uses later entry to override earlier.
 
-bind_source_reader(registry: dict[str, dict]) -> Callable[[str], ResultE[bytes]]
-# Returns a closure that reads from blob:// URIs.
+bind_source_reader(registry: dict[str, dict]) -> ObjectStorageReader
+# reader(uri: str, consume: Callable[[ReadableBinaryStream], T]) -> ResultE[T]
+# Returns a controlled-consumption closure that reads from blob:// URIs.
 # Lazily initializes S3 clients per bucket_id, caches them.
 ```
 
@@ -264,7 +247,7 @@ from fyuneru.s3_source import bind_source_reader, load_source_registry
 config = read_config_with_override(Path("config.yml"))
 registry = load_source_registry(config)
 read = bind_source_reader(registry)
-data = unwrap(read("blob://my-images/photos/img001.jpg"))
+data = unwrap(read("blob://my-images/photos/img001.jpg", lambda body: body.read()))
 ```
 
 **Overlay note:**

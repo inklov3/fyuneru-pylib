@@ -13,7 +13,6 @@ from fyuneru.s3_toolkit import (
     init_workspace_from_config,
     bind_s3_writer,
     bind_s3_reader,
-    bind_s3_chunked_reader,
     bind_s3_deleter,
     bind_s3_lister,
 )
@@ -45,13 +44,9 @@ bind_s3_writer(client, bucket: str) -> ObjectStorageWriter
 # writer(key: str, body: BinaryIO) -> ResultE[None] — upload_fileobj
 
 bind_s3_reader(client, bucket: str) -> ObjectStorageReader
-# reader(key: str) -> ResultE[StreamingBody]        — get_object
-# 调用方必须 close，建议 with closing(body): 或 with body: 使用。
-
-bind_s3_chunked_reader(client, bucket: str, chunk_size: int = 1024 * 1024) -> ObjectStorageChunkedReader
-# reader(key: str) -> ResultE[Iterator[bytes]]
-# 按 chunk_size 迭代；迭代器消费完 / 抛错时自动 close socket。
-# 返回的迭代器只能消费一次。chunk_size 必须 > 0。
+# reader(key: str, consume: Callable[[ReadableBinaryStream], T]) -> ResultE[T]
+# get_object、consume(body)、body.close() 都在 @safe 边界内执行。
+# consume 必须同步消费流，不要保存或返回 body 给外部继续读取。
 
 bind_s3_deleter(client, bucket: str) -> ObjectStorageDeleter
 # deleter(key: str) -> ResultE[None]               — delete_object
@@ -65,8 +60,29 @@ bind_s3_lister(client, bucket: str) -> ObjectStorageLister
 # 可选 suffix 在客户端侧过滤。
 ```
 
+## 用法
+
+```python
+from io import BytesIO
+from pathlib import Path
+
+from fyuneru.result import unwrap
+
+write = bind_s3_writer(client, bucket="my-bucket")
+read = bind_s3_reader(client, bucket="my-bucket")
+
+unwrap(write("small.txt", BytesIO(b"hello")))
+
+def save_to_file(body):
+    with Path("archive.zip").open("wb") as output:
+        while chunk := body.read(1024 * 1024):
+            output.write(chunk)
+
+unwrap(read("archive.zip", save_to_file))
+```
+
 ## 关键约束
 
 - `init_client_from_config` 与 `init_workspace_from_config` 的区别：前者不校验 bucket，后者强制
-- `bind_s3_reader` 返回的 `StreamingBody` 责任在调用方（要 close）
+- `bind_s3_reader` 不返回裸流；读取、写本地文件、解码等操作应放在 `consume` 内同步完成
 - `bind_s3_writer` 只接受文件类对象；小对象可用 `io.BytesIO` 包装

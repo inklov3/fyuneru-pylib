@@ -19,10 +19,11 @@ load_source_registry(config: dict) -> dict[str, dict]
 # s3_sources 非 list / 条目非 dict / 必填字段缺失 / source_id 非非空字符串 → ValueError。
 # 重复 source_id 时 warning 并用后者覆盖前者。
 
-bind_source_reader(registry: dict[str, dict]) -> Callable[[str], ResultE[StreamingBody]]
-# 返回流式读 blob:// URI 的闭包。
+bind_source_reader(registry: dict[str, dict]) -> ObjectStorageReader
+# reader(uri: str, consume: Callable[[ReadableBinaryStream], T]) -> ResultE[T]
+# 返回受控消费式 blob:// URI reader。
 # 按 bucket_id 惰性初始化并缓存 S3 client。
-# 调用方必须 close 返回的 StreamingBody。
+# consume 必须同步消费流，不要保存或返回 body 给外部继续读取。
 ```
 
 ## 用法
@@ -36,8 +37,13 @@ from fyuneru.s3_source import bind_source_reader, load_source_registry
 cfg = read_config_with_override(Path("config.yml"))
 registry = load_source_registry(cfg)
 read = bind_source_reader(registry)
-with unwrap(read("blob://my-images/photos/img001.jpg")) as body:
-    data = body.read()
+
+def save_to_file(body):
+    with Path("image.jpg").open("wb") as output:
+        while chunk := body.read(1024 * 1024):
+            output.write(chunk)
+
+unwrap(read("blob://my-images/photos/img001.jpg", save_to_file))
 ```
 
 ## 配置 YAML
@@ -61,5 +67,6 @@ s3_sources:
 ## 关键约束
 
 - `read_config_with_override` 对 list 走追加合并，**去重在 `load_source_registry` 完成**（后写的 source_id 覆盖前面的）
-- bind_source_reader 返回的闭包内部 cache client，第一次访问某个 bucket 才初始化
+- `bind_source_reader` 返回的闭包内部 cache client，第一次访问某个 bucket 才初始化
+- 当前 `source_reader` 由 `ObjectStorageReader` 实现，key 语义是 `blob://source-id/path` URI；后续增加 file/http 等来源时再引入更通用的 `SourceReader` Protocol
 - 当前只暴露读，不支持写 / 删
