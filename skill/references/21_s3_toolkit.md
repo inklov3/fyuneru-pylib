@@ -14,7 +14,6 @@ from fyuneru.s3_toolkit import (
     bind_s3_writer,
     bind_s3_reader,
     bind_s3_chunked_reader,
-    bind_s3_stream_reader,
     bind_s3_deleter,
     bind_s3_lister,
 )
@@ -43,21 +42,16 @@ init_workspace_from_config(config: dict) -> Callable
 
 ```python
 bind_s3_writer(client, bucket: str) -> ObjectStorageWriter
-# writer(key: str, body: bytes) -> ResultE[None]   — put_object
+# writer(key: str, body: BinaryIO) -> ResultE[None] — upload_fileobj
 
 bind_s3_reader(client, bucket: str) -> ObjectStorageReader
-# reader(key: str) -> ResultE[bytes]               — get_object
-# 警告：全量读入内存，大文件请用 chunked/stream 版本，否则 OOM。
+# reader(key: str) -> ResultE[StreamingBody]        — get_object
+# 调用方必须 close，建议 with closing(body): 或 with body: 使用。
 
 bind_s3_chunked_reader(client, bucket: str, chunk_size: int = 1024 * 1024) -> ObjectStorageChunkedReader
 # reader(key: str) -> ResultE[Iterator[bytes]]
 # 按 chunk_size 迭代；迭代器消费完 / 抛错时自动 close socket。
 # 返回的迭代器只能消费一次。chunk_size 必须 > 0。
-
-bind_s3_stream_reader(client, bucket: str) -> ObjectStorageStreamReader
-# reader(key: str) -> ResultE[StreamingBody]
-# 把 boto3 的 StreamingBody 原样交回，适合转给非 boto3 库（视频解码器等）。
-# 调用方必须 with closing(body): 使用，避免 socket 泄漏。
 
 bind_s3_deleter(client, bucket: str) -> ObjectStorageDeleter
 # deleter(key: str) -> ResultE[None]               — delete_object
@@ -74,5 +68,5 @@ bind_s3_lister(client, bucket: str) -> ObjectStorageLister
 ## 关键约束
 
 - `init_client_from_config` 与 `init_workspace_from_config` 的区别：前者不校验 bucket，后者强制
-- 大文件读取**必须**用 chunked 或 stream 版本；`bind_s3_reader` 是为小对象准备的便捷接口
-- `bind_s3_stream_reader` 返回的 `StreamingBody` 责任在调用方（要 close）
+- `bind_s3_reader` 返回的 `StreamingBody` 责任在调用方（要 close）
+- `bind_s3_writer` 只接受文件类对象；小对象可用 `io.BytesIO` 包装

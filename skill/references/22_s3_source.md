@@ -19,9 +19,10 @@ load_source_registry(config: dict) -> dict[str, dict]
 # s3_sources 非 list / 条目非 dict / 必填字段缺失 / source_id 非非空字符串 → ValueError。
 # 重复 source_id 时 warning 并用后者覆盖前者。
 
-bind_source_reader(registry: dict[str, dict]) -> Callable[[str], ResultE[bytes]]
-# 返回读 blob:// URI 的闭包。
+bind_source_reader(registry: dict[str, dict]) -> Callable[[str], ResultE[StreamingBody]]
+# 返回流式读 blob:// URI 的闭包。
 # 按 bucket_id 惰性初始化并缓存 S3 client。
+# 调用方必须 close 返回的 StreamingBody。
 ```
 
 ## 用法
@@ -35,7 +36,8 @@ from fyuneru.s3_source import bind_source_reader, load_source_registry
 cfg = read_config_with_override(Path("config.yml"))
 registry = load_source_registry(cfg)
 read = bind_source_reader(registry)
-data = unwrap(read("blob://my-images/photos/img001.jpg"))
+with unwrap(read("blob://my-images/photos/img001.jpg")) as body:
+    data = body.read()
 ```
 
 ## 配置 YAML

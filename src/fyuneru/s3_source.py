@@ -4,10 +4,11 @@ S3 多源协议：通过 blob://桶id/key 统一访问多个 S3 源
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import dataclass, field
+from typing import cast
 from urllib.parse import urlparse
 
+from botocore.response import StreamingBody
 from loguru import logger
 
 from fyuneru.result import Failure, ResultE, safe, unwrap
@@ -99,7 +100,7 @@ class MultiSourceReader:
             self._readers[bucket_id] = build_reader_for(source_cfg)
         return self._readers[bucket_id]
 
-    def read(self, uri: str) -> ResultE[bytes]:
+    def read(self, uri: str) -> ResultE[StreamingBody]:
         parsed_result = _safe_parse_uri(uri)
         if isinstance(parsed_result, Failure):
             return parsed_result
@@ -127,10 +128,10 @@ def _safe_reader_for(
 
 def bind_source_reader(
     registry: dict[str, dict],
-) -> Callable[[str], ResultE[bytes]]:
-    """返回一个函数：接受 blob:// URI，返回 ResultE[bytes]。
+) -> ObjectStorageReader:
+    """返回一个函数：接受 blob:// URI，返回 ResultE[StreamingBody]。
 
     内部按需懒初始化 client + reader，缓存已创建的实例。
     """
     multi_reader = MultiSourceReader(registry=registry)
-    return multi_reader.read
+    return cast(ObjectStorageReader, multi_reader.read)

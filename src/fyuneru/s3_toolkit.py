@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import weakref
 from collections.abc import Callable, Iterator
-from typing import TYPE_CHECKING, Any, Protocol, cast
+from typing import TYPE_CHECKING, Any, BinaryIO, Protocol, cast
 
 from boto3 import Session
 from botocore.config import Config
@@ -16,19 +16,15 @@ if TYPE_CHECKING:
 
 
 class ObjectStorageWriter(Protocol):
-    def __call__(self, key: str, body: bytes) -> ResultE[None]: ...
+    def __call__(self, key: str, body: BinaryIO) -> ResultE[None]: ...
 
 
 class ObjectStorageReader(Protocol):
-    def __call__(self, key: str) -> ResultE[bytes]: ...
+    def __call__(self, key: str) -> ResultE[StreamingBody]: ...
 
 
 class ObjectStorageChunkedReader(Protocol):
     def __call__(self, key: str) -> ResultE[Iterator[bytes]]: ...
-
-
-class ObjectStorageStreamReader(Protocol):
-    def __call__(self, key: str) -> ResultE[StreamingBody]: ...
 
 
 class ObjectStorageDeleter(Protocol):
@@ -123,46 +119,21 @@ def init_workspace_from_config(
 
 def bind_s3_writer(client: S3Client, bucket: str) -> ObjectStorageWriter:
     @safe
-    def write_object(key: str, body: bytes) -> None:
-        client.put_object(Bucket=bucket, Key=key, Body=body)
+    def write_object(key: str, body: BinaryIO) -> None:
+        client.upload_fileobj(body, bucket, key)
 
     return write_object
 
 
 def bind_s3_reader(client: S3Client, bucket: str) -> ObjectStorageReader:
-    """全量读取 S3 对象到 bytes。
-
-    **警告：把整个对象读入内存**，大文件请改用 :func:`bind_s3_chunked_reader` 或
-    :func:`bind_s3_stream_reader`，否则随时会 OOM。
-    """
+    """以 :class:`StreamingBody` 形式返回对象，调用方负责 ``close()``。"""
 
     @safe
-    def read_object(key: str) -> bytes:
-        response = client.get_object(Bucket=bucket, Key=key)
-        body: StreamingBody = response["Body"]
-        try:
-            return body.read()
-        finally:
-            body.close()
-
-    return read_object
-
-
-def bind_s3_stream_reader(
-    client: S3Client, bucket: str
-) -> ObjectStorageStreamReader:
-    """以 :class:`StreamingBody` 形式返回对象，调用方负责 ``close()``。
-
-    适合需要把 body 转交给 boto3 之外的库（例如视频解码器）的场景。建议配合
-    ``with closing(body):`` 使用，避免 socket 泄漏。
-    """
-
-    @safe
-    def open_stream(key: str) -> StreamingBody:
+    def read_object(key: str) -> StreamingBody:
         response = client.get_object(Bucket=bucket, Key=key)
         return response["Body"]
 
-    return open_stream
+    return read_object
 
 
 def bind_s3_chunked_reader(

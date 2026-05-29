@@ -1,10 +1,12 @@
 """测试 s3_source 模块的 URI 解析功能"""
 
+from io import BytesIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+import fyuneru.s3_source as s3_source_module
 from fyuneru.config import read_config_with_override
-from fyuneru.result import Failure, is_failure
+from fyuneru.result import Failure, Success, is_failure, unwrap
 from fyuneru.s3_source import bind_source_reader, load_source_registry, parse_blob_uri
 
 
@@ -140,6 +142,29 @@ def test_bind_source_reader_with_unknown_bucket():
     assert "unsupport bucket id" in str(result.error)
 
 
+def test_bind_source_reader_returns_stream():
+    original_build_reader_for = s3_source_module.build_reader_for
+    try:
+        s3_source_module.build_reader_for = lambda _source_cfg: (
+            lambda _key: Success(BytesIO(b"source-data"))
+        )
+        read = bind_source_reader(
+            {
+                "known": {
+                    "source_id": "known",
+                    "endpoint": "https://s3.example.com",
+                    "bucket": "known-bucket",
+                    "access_key_id": "ak",
+                    "secret_access_key": "sk",
+                }
+            }
+        )
+        with unwrap(read("blob://known/path.txt")) as body:
+            assert body.read() == b"source-data"
+    finally:
+        s3_source_module.build_reader_for = original_build_reader_for
+
+
 if __name__ == "__main__":
     test_parse_blob_uri_normal()
     test_parse_blob_uri_simple_key()
@@ -150,4 +175,5 @@ if __name__ == "__main__":
     test_load_source_registry_with_override()
     test_load_source_registry_validate_required_fields()
     test_bind_source_reader_with_unknown_bucket()
+    test_bind_source_reader_returns_stream()
     print("所有 parse_blob_uri 测试通过")
