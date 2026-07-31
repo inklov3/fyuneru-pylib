@@ -2,7 +2,6 @@
 name = "fyuneru"
 version = "0.1.0"
 description = "Python 工具库，封装常用基础设施组件，提供统一、可组合的函数式接口。"
-readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "loguru>=0.7.3",
