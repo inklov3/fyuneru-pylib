@@ -3,6 +3,7 @@
 from io import BytesIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 import fyuneru.s3_source as s3_source_module
 from fyuneru.config import read_config_with_override
@@ -240,6 +241,59 @@ def test_bind_s3_writer_wraps_body_read_error():
     assert "read failed" in str(result.error)
 
 
+def _assert_build_reader_addressing_style(source_cfg: dict, expected_style: str):
+    with patch.object(
+        s3_source_module, "init_client", return_value=lambda: FakeS3Client()
+    ) as mock_init_client:
+        s3_source_module.build_reader_for(source_cfg)
+
+    mock_init_client.assert_called_once_with(
+        endpoint="https://s3.example.com",
+        access_key_id="ak",
+        secret_access_key="sk",
+        region_name=None,
+        addressing_style=expected_style,
+    )
+
+
+def test_build_reader_for_path_addressing_style():
+    _assert_build_reader_addressing_style(
+        {
+            "endpoint": "https://s3.example.com",
+            "bucket": "bucket-a",
+            "access_key_id": "ak",
+            "secret_access_key": "sk",
+            "addressing_style": "path",
+        },
+        "path",
+    )
+
+
+def test_build_reader_for_virtual_addressing_style():
+    _assert_build_reader_addressing_style(
+        {
+            "endpoint": "https://s3.example.com",
+            "bucket": "bucket-a",
+            "access_key_id": "ak",
+            "secret_access_key": "sk",
+            "addressing_style": "virtual",
+        },
+        "virtual",
+    )
+
+
+def test_build_reader_for_defaults_to_virtual_addressing_style():
+    _assert_build_reader_addressing_style(
+        {
+            "endpoint": "https://s3.example.com",
+            "bucket": "bucket-a",
+            "access_key_id": "ak",
+            "secret_access_key": "sk",
+        },
+        "virtual",
+    )
+
+
 def test_bind_source_reader_with_unknown_bucket():
     read = bind_source_reader(
         {
@@ -306,6 +360,9 @@ if __name__ == "__main__":
     test_bind_s3_reader_wraps_consumer_error_and_closes_body()
     test_bind_s3_writer_uploads_fileobj()
     test_bind_s3_writer_wraps_body_read_error()
+    test_build_reader_for_path_addressing_style()
+    test_build_reader_for_virtual_addressing_style()
+    test_build_reader_for_defaults_to_virtual_addressing_style()
     test_bind_source_reader_with_unknown_bucket()
     test_bind_source_reader_consumes_stream()
     print("所有 s3_source 测试通过")

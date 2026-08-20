@@ -86,6 +86,7 @@ def build_reader_for(source_cfg: dict) -> ObjectStorageReader:
         access_key_id=source_cfg["access_key_id"],
         secret_access_key=source_cfg["secret_access_key"],
         region_name=source_cfg.get("region_name"),
+        addressing_style=source_cfg.get("addressing_style", "virtual"),
     )()
     return bind_s3_reader(client, source_cfg["bucket"])
 
