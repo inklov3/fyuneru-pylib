@@ -11,3 +11,4 @@ wheels/
 .*
 !.gitignore
 uv.lock
+config.yml
