@@ -12,7 +12,7 @@ uv add "fyuneru[redis] @ git+https://github.com/inklov3/fyuneru-pylib.git"
 uv add "fyuneru[s3] @ git+https://github.com/inklov3/fyuneru-pylib.git"
 uv add "fyuneru[mongo] @ git+https://github.com/inklov3/fyuneru-pylib.git"
 uv add "fyuneru[pipeline] @ git+https://github.com/inklov3/fyuneru-pylib.git"   # Redis Streams task queue
-uv add "fyuneru[media] @ git+https://github.com/inklov3/fyuneru-pylib.git"      # av + Pillow
+uv add "fyuneru[media] @ git+https://github.com/inklov3/fyuneru-pylib.git"      # av + Pillow, video_toolkit
 uv add "fyuneru[gemini] @ git+https://github.com/inklov3/fyuneru-pylib.git"     # Google Gemini
 ```
 
@@ -107,6 +107,57 @@ unwrap_codeblock(text: str) -> str
 # "```python\nprint('hello')\n```" -> "print('hello')\n"
 ```
 
+### retry (`fyuneru.retry`)
+
+Bounded retry with exponential backoff and jitter. Only retries explicitly declared exception types; everything else propagates immediately so permanent failures surface fast.
+
+```python
+from fyuneru.retry import RetryPolicy, bind_retrying, retry_call
+
+@dataclass(frozen=True)
+class RetryPolicy:
+    attempts: int = 3          # total attempts including the first
+    base_seconds: float = 1.0  # first backoff baseline
+    max_seconds: float = 30.0  # per-backoff ceiling
+    jitter: float = 0.25       # jitter amplitude in [0, 1]
+
+    def delay_for(self, attempt: int) -> float: ...
+# Backoff: min(base_seconds * 2^(attempt-1), max_seconds) * [1-jitter, 1+jitter]
+
+retry_call(
+    operation: Callable[[], T],
+    policy: RetryPolicy | None = None,
+    retry_on: tuple[type[BaseException], ...] = (Exception,),
+    label: str = "operation",
+    sleeper: Callable[[float], None] = sleep,
+) -> T
+# Retries only exceptions in retry_on. Re-raises the last captured exception
+# once the attempt budget is exhausted — no wrapping, so callers can classify.
+# sleeper is injectable for tests.
+
+bind_retrying(
+    policy: RetryPolicy | None = None,
+    retry_on: tuple[type[BaseException], ...] = (Exception,),
+    label: str = "operation",
+) -> Callable[[Callable[[], T]], ResultE[T]]
+# Same semantics, result wrapped in ResultE.
+```
+
+**Usage:**
+```python
+from fyuneru.gemini_toolkit import GeminiTransientError
+from fyuneru.retry import RetryPolicy, retry_call
+
+response = retry_call(
+    operation=lambda: unwrap(captioner(prompt, source)),
+    policy=RetryPolicy(attempts=5, base_seconds=2.0, max_seconds=60.0),
+    retry_on=(GeminiTransientError,),
+    label="gemini_caption",
+)
+```
+
+Division of labour: `fyuneru.retry` handles call-level transient failures; `task_queue` / Ray handle task-level replay for process crashes or unavailable workers. Default `retry_on=(Exception,)` swallows permanent failures too — always list types explicitly.
+
 ### redis_toolkit (`fyuneru.redis_toolkit`)
 
 Requires: `fyuneru[redis]`
@@ -162,6 +213,8 @@ Requires: `fyuneru[s3]`
 from fyuneru.s3_toolkit import (
     bind_s3_deleter,
     bind_s3_lister,
+    bind_s3_presigner,
+    bind_s3_probe,
     bind_s3_reader,
     bind_s3_writer,
     init_client,
@@ -207,7 +260,44 @@ bind_s3_lister(client: S3Client, bucket: str) -> ObjectStorageLister
 # 防止陷入死循环。
 # Filters out directory placeholders (keys ending with "/").
 # Optional suffix filter applied client-side.
+
+bind_s3_presigner(client: S3Client, bucket: str) -> ObjectStoragePresigner
+# presign(key: str, expires_seconds: int = 3600) -> ResultE[str]
+# Generates a get_object presigned URL. expires_seconds must be positive.
+# Hands an object to external services that cannot hold credentials
+# (e.g. a multimodal model fetching the video itself).
+# Expiry must cover the full downstream window (queueing + fetch).
+
+bind_s3_probe(client: S3Client, bucket: str) -> ObjectStorageProbe
+# probe(key: str) -> ResultE[ObjectStat | None]
+# head_object. A missing object is Success(None), not Failure — only real
+# errors (auth, network) surface as Failure. Callers must distinguish.
+
+@dataclass(frozen=True)
+class ObjectStat:
+    key: str
+    size_bytes: int
+    etag: str | None          # surrounding quotes stripped
+    content_type: str | None
 ```
+
+**Usage (idempotent reuse + presigned handoff):**
+```python
+from fyuneru.result import unwrap
+from fyuneru.s3_toolkit import bind_s3_presigner, bind_s3_probe
+
+probe = bind_s3_probe(client, "workspace-bucket")
+presign = bind_s3_presigner(client, "workspace-bucket")
+key = "prepared/v1-480p-1fps/video.mp4"
+
+stat = unwrap(probe(key))
+if stat is None or stat.size_bytes == 0:
+    produce(key)
+
+url = unwrap(presign(key, expires_seconds=7200))
+```
+
+Presigned URLs embed a signature; never persist or archive them as a stable identity.
 
 ### s3_source (`fyuneru.s3_source`)
 
@@ -466,7 +556,16 @@ enqueue_many(broker: Broker, messages: list[Message]) -> EnqueueManyResult
 Requires: `fyuneru[gemini]`
 
 ```python
-from fyuneru.gemini_toolkit import build_content_config, init_client, init_client_from_config
+from fyuneru.gemini_toolkit import (
+    VideoSource,
+    bind_video_captioner,
+    build_content_config,
+    classify_gemini_error,
+    init_client,
+    init_client_from_config,
+    response_to_json_object,
+    response_to_raw_dict,
+)
 
 init_client(api_key: str, endpoint: str, api_version: str = "v1beta")
     -> Callable[[], Client]
@@ -483,9 +582,70 @@ build_content_config(
     system_instruction: str | None = None,
 ) -> GenerateContentConfig
 # Builds config for structured JSON output from Gemini.
+
+@dataclass(frozen=True)
+class VideoSource:
+    uri: str | None = None      # fileData: model fetches it; only scalable path for large files
+    path: Path | None = None    # inlineData, streamed from disk
+    data: bytes | None = None   # inlineData, small files only
+    mime_type: str = "video/mp4"
+# Exactly one of uri/path/data must be provided.
+
+bind_video_captioner(
+    client: Client,
+    model: str,
+    content_config: GenerateContentConfig | None = None,
+) -> VideoCaptioner
+# captioner(prompt: str, source: VideoSource) -> ResultE[GenerateContentResponse]
+# Video part is placed before the prompt in contents.
+# Failures pass through classify_gemini_error, so Failure already carries
+# GeminiTransientError or GeminiPermanentError.
+
+classify_gemini_error(error: Exception) -> Exception
+# ServerError                       -> GeminiTransientError
+# ClientError/APIError 408,429,5xx  -> GeminiTransientError
+# other ClientError/APIError        -> GeminiPermanentError
+# non-API errors                    -> returned unchanged
+
+response_to_json_object(response: GenerateContentResponse) -> dict[str, Any]
+# Parses response.text as JSON. Rejects non-object top levels: contract fields
+# live on the top-level object, so an array/scalar means the model ignored the schema.
+
+response_to_raw_dict(response: GenerateContentResponse) -> dict[str, Any]
+# Full response as a persistable dict. Archive this alongside the parsed result so
+# usage, finishReason and safety — which only exist in the raw body — stay traceable.
 ```
 
-**Usage:**
+**Usage (video captioning with bounded retry):**
+```python
+from fyuneru.gemini_toolkit import (
+    GeminiTransientError,
+    VideoSource,
+    bind_video_captioner,
+    response_to_json_object,
+    response_to_raw_dict,
+)
+from fyuneru.result import unwrap
+from fyuneru.retry import RetryPolicy, retry_call
+
+captioner = bind_video_captioner(
+    client,
+    model="gemini-2.0-flash",
+    content_config=build_content_config(schema=MyModel.model_json_schema()),
+)
+
+response = retry_call(
+    operation=lambda: unwrap(captioner(prompt, VideoSource(uri=presigned_url))),
+    policy=RetryPolicy(attempts=5, base_seconds=2.0),
+    retry_on=(GeminiTransientError,),
+    label="gemini_caption",
+)
+
+raw = response_to_raw_dict(response)        # archive first
+result = response_to_json_object(response)  # then the structured result
+```
+
+**Usage (text-only structured output):**
 ```python
 client = init_client(api_key="sk_xxx", endpoint="https://xxx")()
 response = client.models.generate_content(
@@ -498,6 +658,103 @@ response = client.models.generate_content(
 )
 result = MyModel.model_validate_json(response.text)
 ```
+
+### video_toolkit (`fyuneru.video_toolkit`)
+
+Requires: `fyuneru[media]`
+
+Downsamples any source video into an MP4 carrying a single low-resolution, low-frame-rate video stream. Audio, DJI preview `mjpeg` tracks and `data` tracks are all dropped. Motivation: upstream multimodal models bill and throttle per frame and per resolution, while source footage (e.g. 4K high-frame-rate drone MP4) carries one or two orders of magnitude more data than the model needs.
+
+```python
+from fyuneru.video_toolkit import (
+    DownsampleReport,
+    MediaProfile,
+    VideoProcessError,
+    VideoStat,
+    downsample_video,
+    probe_video,
+    safe_downsample_video,
+    scaled_size,
+)
+
+@dataclass(frozen=True)
+class MediaProfile:
+    target_height: int = 480
+    target_fps: int = 1
+    crf: int = 28
+    preset: str = "veryfast"
+    encoder: str = "libx264"
+    version: str = "v1"
+
+    def descriptor(self) -> str: ...   # "v1-480p-1fps"
+# version participates in the derived artifact's storage path, so a spec change
+# never silently reuses old artifacts. descriptor() is safe to embed in an S3 key.
+
+downsample_video(
+    source: str | Path,
+    destination: Path,
+    profile: MediaProfile | None = None,
+    threads: int = 0,
+    allow_keyframe_only: bool = True,
+    max_output_bytes: int | None = None,
+) -> DownsampleReport
+# threads=0 lets FFmpeg decide; set a small explicit value when running many
+# workers, otherwise each worker tries to saturate the whole machine.
+# allow_keyframe_only probes the source GOP: dense-enough sources let the decoder
+# drop non-keyframes before reconstruction (skip_frame=NONKEY), the main CPU saving.
+# Coarse GOPs fall back to full decode so sampling stays evenly spaced.
+# Raises VideoProcessError when the source cannot yield a derived video, or when
+# the output exceeds max_output_bytes.
+
+probe_video(source: str | Path) -> VideoStat
+# Opens the container without decoding.
+
+@dataclass(frozen=True)
+class VideoStat:
+    width: int
+    height: int
+    duration_seconds: float | None
+    nb_frames: int | None
+    codec_name: str | None
+
+@dataclass(frozen=True)
+class DownsampleReport:
+    destination: Path
+    size_bytes: int
+    frames_written: int
+    width: int
+    height: int
+    keyframe_only: bool      # True means the fast path was taken
+    profile: MediaProfile
+
+safe_downsample_video(...) -> ResultE[DownsampleReport]
+
+scaled_size(width, height, target_height: int) -> tuple[int, int]
+# Aspect-preserving, both dimensions forced even (yuv420p requirement).
+# Sources already below target_height are left alone — upscaling adds bytes, not information.
+
+class VideoProcessError(RuntimeError): ...
+# Source-intrinsic failure (no video stream, undecodable, no decodable frames).
+# Retrying will not change the outcome; treat as permanent.
+```
+
+**Usage:**
+```python
+from pathlib import Path
+
+from fyuneru.video_toolkit import MediaProfile, downsample_video
+
+profile = MediaProfile(target_height=480, target_fps=1, version="v1")
+report = downsample_video(
+    source=Path("source.mp4"),
+    destination=Path("prepared") / profile.descriptor() / "video.mp4",
+    profile=profile,
+    threads=2,
+    max_output_bytes=100 * 1024 * 1024,
+)
+```
+
+Frame sampling works by fixing the output timebase and computing pts directly, rather than relying on the encoder to drop frames — encoding every decoded frame would keep the source frame rate regardless of the requested rate.
 
 Task queue design doc: `docs/task_queue_design.md`
 

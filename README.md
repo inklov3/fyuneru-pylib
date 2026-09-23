@@ -32,13 +32,13 @@ uv add fyuneru@git+https://github.com/inklov3/fyuneru-pylib.git
 
 | 安装方式 | 对应能力 | 主要模块 |
 | --- | --- | --- |
-| 默认安装 | 日志、YAML 配置、pickle/JSON 转换、Markdown 工具 | `logger`、`config`、`converter`、`markdown_utils` |
+| 默认安装 | 日志、YAML 配置、pickle/JSON 转换、Markdown 工具、有界重试 | `logger`、`config`、`converter`、`markdown_utils`、`retry` |
 | `fyuneru[redis]` | Redis client、Set 封装、checkpoint key 计算 | `redis_toolkit`、`redis_toolkit.init_client_from_config` |
 | `fyuneru[s3]` | S3 client、对象读写删除列举、多源 `blob://` 读取 | `s3_toolkit`、`s3_source`、`s3_toolkit.init_client_from_config`、`s3_toolkit.init_workspace_from_config` |
 | `fyuneru[mongo]` | MongoClient 惰性初始化与按配置获取 `Database` | `mongo_toolkit`、`mongo_toolkit.init_client_from_config`、`mongo_toolkit.init_database_from_config` |
-| `fyuneru[gemini]` | Google Gemini client 与结构化 JSON 输出配置 | `gemini_toolkit`、`gemini_toolkit.init_client_from_config` |
+| `fyuneru[gemini]` | Google Gemini client、视频输入构造、错误分类与结构化 JSON 输出 | `gemini_toolkit`、`gemini_toolkit.init_client_from_config` |
 | `fyuneru[pipeline]` | Redis Streams 任务队列能力 | `task_queue` 及 `redis` 相关模块 |
-| `fyuneru[media]` | 安装 `av` / `Pillow` 依赖，便于上层媒体处理代码复用 | 当前仓库未提供独立 `media` toolkit |
+| `fyuneru[media]` | 视频降采样（分辨率/帧率规约、只保留主视频流） | `video_toolkit` |
 
 例如：
 
@@ -56,13 +56,15 @@ uv add "fyuneru[redis,s3] @ git+https://github.com/inklov3/fyuneru-pylib.git"
 | `fyuneru.config` | YAML 配置读取（含单层增量覆盖） | 默认安装 |
 | `fyuneru.converter` | pickle 字节互转、任意对象转 JSON 兼容结构 | 默认安装 |
 | `fyuneru.markdown_utils` | 去掉 Markdown 代码块包裹，保留正文 | 默认安装 |
+| `fyuneru.retry` | 指数退避 + 拖动的有界重试，只重试显式声明的异常 | 默认安装 |
 | `fyuneru.redis_toolkit` | Redis / RedisCluster 惰性初始化、Set 操作、checkpoint key 计算 | `redis` |
-| `fyuneru.s3_toolkit` | S3 client 初始化与对象读写删除列举 | `s3` |
+| `fyuneru.s3_toolkit` | S3 client 初始化、对象读写删除列举、预签名 URL 与对象探测 | `s3` |
 | `fyuneru.s3_source` | 通过 `blob://桶id/key` 协议透明读取多个 S3 源 | `s3` |
 | `fyuneru.mongo_toolkit` | MongoClient 惰性初始化 | `mongo` |
 | `fyuneru.task_queue` | Redis Streams broker、Actor 注册、消息投递与 Worker 消费 | `pipeline` |
 | `fyuneru.dramatiq_toolkit` | Dramatiq RedisBroker 构建、消息构造与批量投递 | `pipeline` |
-| `fyuneru.gemini_toolkit` | Gemini client 初始化与结构化输出配置 | `gemini` |
+| `fyuneru.gemini_toolkit` | Gemini client 初始化、视频输入、错误分类与结构化输出 | `gemini` |
+| `fyuneru.video_toolkit` | 视频降采样为单流低规格 MP4，可版本化 `MediaProfile` | `media` |
 
 ## 快速上手
 
@@ -289,16 +291,50 @@ unwrap(
 )
 ```
 
-### Gemini 结构化输出
+### Gemini 视频标注与结构化输出
 
 ```python
-from fyuneru.gemini_toolkit import build_content_config, init_client
+from fyuneru.gemini_toolkit import (
+    GeminiTransientError,
+    VideoSource,
+    bind_video_captioner,
+    build_content_config,
+    init_client,
+    response_to_json_object,
+    response_to_raw_dict,
+)
+from fyuneru.result import unwrap
+from fyuneru.retry import RetryPolicy, retry_call
 
 client = init_client(
     api_key="sk_xxxx",
     endpoint="https://api.example.com",
 )()
 
+captioner = bind_video_captioner(
+    client,
+    model="gemini-2.0-flash",
+    content_config=build_content_config(
+        schema=MyModel.model_json_schema(),
+        system_instruction=system_prompt,
+    ),
+)
+
+# 预签名 URL 让模型侧自行拉取，请求体不带视频字节
+response = retry_call(
+    operation=lambda: unwrap(captioner(prompt, VideoSource(uri=presigned_url))),
+    policy=RetryPolicy(attempts=5, base_seconds=2.0),
+    retry_on=(GeminiTransientError,),
+    label="gemini_caption",
+)
+
+raw = response_to_raw_dict(response)        # 归档原始响应
+result = response_to_json_object(response)  # 结构化结果
+```
+
+纯文本结构化输出仍可直接用 client：
+
+```python
 response = client.models.generate_content(
     model="gemini-2.0-flash",
     contents=[prompt],
@@ -308,6 +344,45 @@ response = client.models.generate_content(
     ),
 )
 result = MyModel.model_validate_json(response.text)
+```
+
+### 视频降采样
+
+```python
+from pathlib import Path
+
+from fyuneru.video_toolkit import MediaProfile, downsample_video, probe_video
+
+profile = MediaProfile(target_height=480, target_fps=1, version="v1")
+stat = probe_video(Path("source.mp4"))
+
+report = downsample_video(
+    source=Path("source.mp4"),
+    destination=Path("prepared") / profile.descriptor() / "video.mp4",
+    profile=profile,
+    threads=2,
+    max_output_bytes=100 * 1024 * 1024,
+)
+```
+
+输出只保留一条视频流，音频与 DJI 预览/data 轨全部丢弃；`profile.descriptor()` 可直接拼进对象存储 key，避免规格变更后静默复用旧产物。
+
+### 有界重试
+
+```python
+from fyuneru.retry import RetryPolicy, bind_retrying, retry_call
+
+# 只重试瞬时错误，永久错误立即透传
+value = retry_call(
+    operation=lambda: call_upstream(),
+    policy=RetryPolicy(attempts=3, base_seconds=1.0, max_seconds=30.0),
+    retry_on=(TransientError,),
+    label="call_upstream",
+)
+
+# 包成 ResultE
+execute = bind_retrying(retry_on=(TransientError,))
+result = execute(lambda: call_upstream())
 ```
 
 ### 基础转换工具
@@ -352,8 +427,12 @@ uv run pyclean src/
 uv run ruff check src/
 uv run pyrefly check src/
 uv run python test/test_s3_source.py
+uv run python test/test_s3_toolkit.py
 uv run python test/test_logger.py
 uv run python test/test_config.py
+uv run python test/test_retry.py
+uv run python test/test_gemini_toolkit.py
+uv run python test/test_video_toolkit.py
 uv run python test/test_task_queue.py
 ```
 

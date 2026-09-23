@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, BinaryIO, Protocol, TypeVar, cast, overload
 
 from boto3 import Session
 from botocore.config import Config
+from botocore.exceptions import ClientError
 
 from fyuneru.config import parse_s3_config
 from fyuneru.result import ResultE, safe
@@ -49,6 +51,28 @@ class ObjectStorageLister(Protocol):
         prefix: str,
         suffix: str | None = None,
     ) -> ResultE[list[str]]: ...
+
+
+class ObjectStoragePresigner(Protocol):
+    def __call__(
+        self,
+        key: str,
+        expires_seconds: int = 3600,
+    ) -> ResultE[str]: ...
+
+
+class ObjectStorageProbe(Protocol):
+    def __call__(self, key: str) -> ResultE[ObjectStat | None]: ...
+
+
+@dataclass(frozen=True)
+class ObjectStat:
+    """对象存在性探测结果。"""
+
+    key: str
+    size_bytes: int
+    etag: str | None
+    content_type: str | None
 
 
 def init_client(
@@ -161,6 +185,59 @@ def bind_s3_deleter(client: S3Client, bucket: str) -> ObjectStorageDeleter:
         client.delete_object(Bucket=bucket, Key=key)
 
     return delete_object
+
+
+def bind_s3_presigner(client: S3Client, bucket: str) -> ObjectStoragePresigner:
+    """返回预签名 GET URL 生成器。
+
+    预签名把"谁能读这个对象"和"谁在读"解耦：上游模型服务无需任何
+    凭据即可拉取 workspace 里的派生对象，凭据不离开本进程。
+    """
+
+    @safe
+    def presign(key: str, expires_seconds: int = 3600) -> str:
+        if expires_seconds < 1:
+            raise ValueError("expires_seconds 必须大于 0")
+        return client.generate_presigned_url(
+            ClientMethod="get_object",
+            Params={"Bucket": bucket, "Key": key},
+            ExpiresIn=expires_seconds,
+        )
+
+    return presign
+
+
+def bind_s3_probe(client: S3Client, bucket: str) -> ObjectStorageProbe:
+    """返回对象探测器：存在时给出大小/ETag，不存在时返回 None。
+
+    幂等复用的前置条件是"能便宜地判断产物是否已就绪"，HEAD 就是这个
+    判断；404 属于正常答案而非错误，所以映射为 None 而不是 Failure。
+    """
+
+    @safe
+    def probe(key: str) -> ObjectStat | None:
+        try:
+            response = client.head_object(Bucket=bucket, Key=key)
+        except ClientError as error:
+            status = error.response.get("ResponseMetadata", {}).get("HTTPStatusCode")
+            code = error.response.get("Error", {}).get("Code")
+            if status == 404 or code in {"404", "NoSuchKey", "NotFound"}:
+                return None
+            raise
+        return ObjectStat(
+            key=key,
+            size_bytes=int(response.get("ContentLength", 0)),
+            etag=_strip_etag(response.get("ETag")),
+            content_type=response.get("ContentType"),
+        )
+
+    return probe
+
+
+def _strip_etag(value: str | None) -> str | None:
+    if value is None:
+        return None
+    return value.strip('"') or None
 
 
 def bind_s3_lister(client: S3Client, bucket: str) -> ObjectStorageLister:

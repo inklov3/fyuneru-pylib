@@ -29,11 +29,13 @@ description: fyuneru / fyuneru-pylib Python 工具库的 API 索引。当用户�
 | [`references/11_config.md`](references/11_config.md) | `fyuneru.config` | 默认 | YAML 读取、单层覆盖、类型化解析器 |
 | [`references/12_converter.md`](references/12_converter.md) | `fyuneru.converter` | 默认 | pickle 互转 + JSON 兼容结构 |
 | [`references/13_markdown_utils.md`](references/13_markdown_utils.md) | `fyuneru.markdown_utils` | 默认 | 代码块剥壳 |
+| [`references/15_retry.md`](references/15_retry.md) | `fyuneru.retry` | 默认 | 有界重试、指数退避、瞬时/永久异常分类 |
 | [`references/20_redis_toolkit.md`](references/20_redis_toolkit.md) | `fyuneru.redis_toolkit` | `[redis]` | Redis 客户端 + Set 操作 + checkpoint key |
-| [`references/21_s3_toolkit.md`](references/21_s3_toolkit.md) | `fyuneru.s3_toolkit` | `[s3]` | S3 client + 对象读写删除列举 |
+| [`references/21_s3_toolkit.md`](references/21_s3_toolkit.md) | `fyuneru.s3_toolkit` | `[s3]` | S3 client + 对象读写删除列举 + 预签名 URL + 对象探测 |
 | [`references/22_s3_source.md`](references/22_s3_source.md) | `fyuneru.s3_source` | `[s3]` | `blob://` 多源透明读取 |
 | [`references/23_mongo_toolkit.md`](references/23_mongo_toolkit.md) | `fyuneru.mongo_toolkit` | `[mongo]` | MongoClient + ensure_index |
-| [`references/24_gemini_toolkit.md`](references/24_gemini_toolkit.md) | `fyuneru.gemini_toolkit` | `[gemini]` | Gemini client + 结构化输出 |
+| [`references/24_gemini_toolkit.md`](references/24_gemini_toolkit.md) | `fyuneru.gemini_toolkit` | `[gemini]` | Gemini client + 视频输入 + 错误分类 + 结构化输出 |
+| [`references/25_video_toolkit.md`](references/25_video_toolkit.md) | `fyuneru.video_toolkit` | `[media]` | 视频降采样为单流低规格 MP4 |
 | [`references/30_task_queue.md`](references/30_task_queue.md) | `fyuneru.task_queue` | `[pipeline]` | Redis Streams broker / actor / worker / xq |
 | [`references/31_dramatiq_toolkit.md`](references/31_dramatiq_toolkit.md) | `fyuneru.dramatiq_toolkit` | `[pipeline]` | Dramatiq 批量入队辅助 |
 | [`references/32_worker_env.md`](references/32_worker_env.md) | `fyuneru.worker` | 按启用资源 | `setup_worker_env` + result key 约定 |

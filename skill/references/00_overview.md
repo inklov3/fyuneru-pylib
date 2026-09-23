@@ -18,13 +18,13 @@ uv add fyuneru@git+https://github.com/inklov3/fyuneru-pylib.git
 
 | extra | 启用模块 |
 | --- | --- |
-| 默认安装 | `logger`、`config`、`converter`、`markdown_utils`、`result` |
+| 默认安装 | `logger`、`config`、`converter`、`markdown_utils`、`result`、`retry` |
 | `fyuneru[redis]` | `redis_toolkit` |
 | `fyuneru[s3]` | `s3_toolkit`、`s3_source` |
 | `fyuneru[mongo]` | `mongo_toolkit` |
 | `fyuneru[gemini]` | `gemini_toolkit` |
 | `fyuneru[pipeline]` | `task_queue`、`dramatiq_toolkit` |
-| `fyuneru[media]` | 安装 `av`/`Pillow`，本库未提供独立 toolkit |
+| `fyuneru[media]` | `video_toolkit`（需 `av`） |
 
 ```bash
 uv add "fyuneru[redis,s3] @ git+https://github.com/inklov3/fyuneru-pylib.git"
@@ -41,11 +41,13 @@ uv add "fyuneru[redis,s3] @ git+https://github.com/inklov3/fyuneru-pylib.git"
 | `11_config.md` | `fyuneru.config` | 默认 |
 | `12_converter.md` | `fyuneru.converter` | 默认 |
 | `13_markdown_utils.md` | `fyuneru.markdown_utils` | 默认 |
+| `15_retry.md` | `fyuneru.retry` | 默认 |
 | `20_redis_toolkit.md` | `fyuneru.redis_toolkit` | `[redis]` |
 | `21_s3_toolkit.md` | `fyuneru.s3_toolkit` | `[s3]` |
 | `22_s3_source.md` | `fyuneru.s3_source` | `[s3]` |
 | `23_mongo_toolkit.md` | `fyuneru.mongo_toolkit` | `[mongo]` |
 | `24_gemini_toolkit.md` | `fyuneru.gemini_toolkit` | `[gemini]` |
+| `25_video_toolkit.md` | `fyuneru.video_toolkit` | `[media]` |
 | `30_task_queue.md` | `fyuneru.task_queue` | `[pipeline]` |
 | `31_dramatiq_toolkit.md` | `fyuneru.dramatiq_toolkit` | `[pipeline]` |
 | `32_worker_env.md` | `fyuneru.worker` | 按启用资源 |

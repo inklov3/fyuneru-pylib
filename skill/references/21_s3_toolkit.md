@@ -1,6 +1,6 @@
 # fyuneru.s3_toolkit
 
-S3 client 初始化与对象读写删除列举。
+S3 client 初始化、对象读写删除列举、预签名 URL 与对象探测。
 
 需要：`fyuneru[s3]`
 
@@ -15,6 +15,8 @@ from fyuneru.s3_toolkit import (
     bind_s3_reader,
     bind_s3_deleter,
     bind_s3_lister,
+    bind_s3_presigner,
+    bind_s3_probe,
 )
 
 init_client(
@@ -58,7 +60,30 @@ bind_s3_lister(client, bucket: str) -> ObjectStorageLister
 # 并带 prefix，防止死循环。
 # 过滤掉目录占位符（key 以 "/" 结尾）。
 # 可选 suffix 在客户端侧过滤。
+
+bind_s3_presigner(client, bucket: str) -> ObjectStoragePresigner
+# presign(key: str, expires_seconds: int = 3600) -> ResultE[str]
+# 生成 get_object 预签名 URL。expires_seconds 必须为正数。
+# 用于把对象交给无法持有凭证的外部服务（例如多模态模型拉取视频）。
+
+bind_s3_probe(client, bucket: str) -> ObjectStorageProbe
+# probe(key: str) -> ResultE[ObjectStat | None]
+# head_object；对象不存在返回 Success(None)，而不是 Failure。
+# 鉴权失败、网络错误等仍然返回 Failure，不会被当成“不存在”。
 ```
+
+## ObjectStat
+
+```python
+@dataclass(frozen=True)
+class ObjectStat:
+    key: str
+    size_bytes: int
+    etag: str | None          # 已剔掉包裹引号
+    content_type: str | None
+```
+
+`etag` 可作为源对象的内容指纹记入派生产物的 provenance，用于判定源是否变更。
 
 ## 用法
 
@@ -81,8 +106,39 @@ def save_to_file(body):
 unwrap(read("archive.zip", save_to_file))
 ```
 
+### 幂等复用：先探测再处理
+
+```python
+from fyuneru.result import unwrap
+from fyuneru.s3_toolkit import bind_s3_probe
+
+probe = bind_s3_probe(client, "workspace-bucket")
+stat = unwrap(probe("prepared/v1-480p-1fps/video.mp4"))
+if stat is not None and stat.size_bytes > 0:
+    # 派生产物已存在，跳过重新转码
+    reuse(stat)
+else:
+    produce()
+```
+
+### 预签名 URL 交给外部服务
+
+```python
+from fyuneru.gemini_toolkit import VideoSource
+from fyuneru.result import unwrap
+from fyuneru.s3_toolkit import bind_s3_presigner
+
+presign = bind_s3_presigner(client, "workspace-bucket")
+# 有效期需覆盖排队时间 + 模型拉取时间
+url = unwrap(presign("prepared/v1-480p-1fps/video.mp4", expires_seconds=7200))
+source = VideoSource(uri=url)
+```
+
 ## 关键约束
 
 - `init_client_from_config` 与 `init_workspace_from_config` 的区别：前者不校验 bucket，后者强制
 - `bind_s3_reader` 不返回裸流；读取、写本地文件、解码等操作应放在 `consume` 内同步完成
 - `bind_s3_writer` 只接受文件类对象；小对象可用 `io.BytesIO` 包装
+- `bind_s3_probe` 把"对象不存在"当正常结果（`Success(None)`），只有真正的错误才是 `Failure`；调用方必须区分两者
+- 预签名 URL 的有效期需覆盖下游消费的完整窗口（排队 + 拉取），过短会在高负载下随机失败
+- 预签名 URL 包含签名，不得当作稳定身份标识持久化或归档

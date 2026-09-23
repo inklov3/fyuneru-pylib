@@ -7,18 +7,20 @@
 ```
 skill/
   README.md                       # 本文件
-  references/                     # 共享：按模块拆出来的 API 参考（14 个）
+  references/                     # 共享：按模块拆出来的 API 参考（16 个）
     00_overview.md                # 项目约定 + extra 矩阵 + 配置 YAML
     01_result.md                  # Result / @safe / unwrap（所有模块都引用）
     10_logger.md
     11_config.md
     12_converter.md
     13_markdown_utils.md
+    15_retry.md
     20_redis_toolkit.md
     21_s3_toolkit.md
     22_s3_source.md
     23_mongo_toolkit.md
     24_gemini_toolkit.md
+    25_video_toolkit.md
     30_task_queue.md
     31_dramatiq_toolkit.md
     32_worker_env.md
