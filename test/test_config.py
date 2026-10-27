@@ -4,7 +4,6 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from fyuneru.config import (
-    parse_mongo_config,
     parse_redis_config,
     parse_s3_config,
     read_config,
@@ -169,26 +168,10 @@ def test_parse_s3_config_rejects_invalid_addressing_style() -> None:
         assert "addressing_style" in str(error)
 
 
-def test_parse_mongo_config_success() -> None:
-    parsed = parse_mongo_config(
-        {
-            "mongo": {
-                "uri": "mongodb://127.0.0.1:27017",
-                "db": "mydb",
-                "timeout": 5000,
-            }
-        }
-    )
-    assert parsed.uri == "mongodb://127.0.0.1:27017"
-    assert parsed.db == "mydb"
-    assert parsed.timeout == 5000
-
-
 if __name__ == "__main__":
     test_read_config_with_override_merge_rules()
     test_read_config_with_override_none_equals_read_config()
     test_parse_redis_config_success()
     test_parse_s3_config_success()
     test_parse_s3_config_rejects_invalid_addressing_style()
-    test_parse_mongo_config_success()
     print("所有 config 覆盖测试通过")

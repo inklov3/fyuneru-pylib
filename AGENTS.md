@@ -1,37 +1,44 @@
 # AGENTS.md — fyuneru-pylib
 
 ## 先记住这些（最容易做错）
+
 - 只用 `uv`，不要用 pip/poetry。
 - 这是 `src/` 布局的**库项目**，源码在 `src/fyuneru/`，不是应用入口仓库。
 - 顶层 `src/fyuneru/__init__.py` 为空；默认从子模块导入。
 - 测试是脚本执行（`uv run python test/*.py`），不是 pytest 工作流。
 
 ## 安装与依赖边界
+
 - 开发最小依赖：`uv sync --group dev`
 - 需要可选能力时显式加 extra：
-  `uv sync --group dev --extra redis --extra s3 --extra mongo --extra gemini --extra pipeline --extra media`
+  `uv sync --group dev --extra redis --extra s3 --extra gemini --extra pipeline --extra media`
 - 不要假设可选依赖存在：
   - `redis_toolkit` → `fyuneru[redis]`
   - `s3_toolkit` / `s3_source` → `fyuneru[s3]`
-  - `mongo_toolkit` → `fyuneru[mongo]`
   - `gemini_toolkit` → `fyuneru[gemini]`
-  - `task_queue` / `dramatiq_toolkit` → `fyuneru[pipeline]`
+  - `task_queue` → `fyuneru[pipeline]`
 
 ## 权威校验命令（以可执行脚本为准）
+
 - 完整发布前校验：`./pre_release.sh`
 - `pre_release.sh` 当前顺序（不要改顺序假设）：
-  1) `uv sync --group dev --extra redis --extra s3 --extra mongo --extra gemini --extra pipeline --extra media`
+  1) `uv sync --group dev --extra redis --extra s3 --extra gemini --extra pipeline --extra media`
   2) `uv run pyclean src/`
   3) `uv run ruff check src/`
   4) `uv run pyrefly check src/`
   5) `uv run python test/test_s3_source.py`
-  6) `uv run python test/test_logger.py`
-  7) `uv run python test/test_config.py`
-  8) `uv run python test/test_task_queue.py`
-- 注意：仓库还有 `test/test_worker_env.py`，但**当前 pre_release 未覆盖**；改动 `fyuneru/worker/*` 或 `mongo/redis/s3` 绑定逻辑时请手动跑：
+  6) `uv run python test/test_s3_toolkit.py`
+  7) `uv run python test/test_logger.py`
+  8) `uv run python test/test_config.py`
+  9) `uv run python test/test_retry.py`
+  10) `uv run python test/test_gemini_toolkit.py`
+  11) `uv run python test/test_video_toolkit.py`
+  12) `uv run python test/test_task_queue.py`
+- 注意：仓库还有 `test/test_worker_env.py`，但**当前 pre_release 未覆盖**；改动 `fyuneru/worker/*` 或 Redis/S3 绑定逻辑时请手动跑：
   `uv run python test/test_worker_env.py`
 
 ## 常用定向验证
+
 - `uv run python test/test_logger.py`
 - `uv run python test/test_s3_source.py`
 - `uv run python test/test_config.py`
@@ -39,6 +46,7 @@
 - `uv run python test/test_worker_env.py`
 
 ## 结构与约束（影响实现决策）
+
 - 统一模式：`init_*`（返回惰性 initializer）/ `bind_*`（绑定资源返回单操作闭包）/ `build_*`（构建组合对象）。
 - 统一错误模型：`src/fyuneru/result.py` 的 `Success` / `Failure` / `@safe` / `unwrap`。
 - 配置读取：`src/fyuneru/config.py`
@@ -51,6 +59,13 @@
   - payload envelope 强校验在 `task_queue/codec.py`
   - `run_worker` 是无限循环；测试/本地验证优先用 `run_worker_once_for_test`
 
+## 通用 API 参考
+
+- 使用或修改本库时先阅读 `docs/reference/00_overview.md` 和 `docs/reference/01_result.md`，再按概览索引读取相关模块参考；以源码和测试为准。
+- 下游 pipeline 项目可参考 `docs/reference/40_pipeline_project.md`；完整 API 指南见 `src/fyuneru/GUIDE.md`。
+- 修改 API 时同步更新对应参考文档和指南；这些普通 Markdown 文档不依赖特定 agent 或插件。
+
 ## 仓库约定
+
 - 注释/docstring 使用中文；代码标识符使用英文。
 - commit message 使用中文并带前缀：`fix:` / `feat:` / `refactor:` / `doc:` / `style:`。

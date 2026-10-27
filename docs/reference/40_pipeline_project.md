@@ -5,7 +5,7 @@
 ## 适用场景
 
 - 项目有一个或多个异步节点，节点间通过 Redis Streams 串联。
-- 需要复用 Redis / S3 workspace / `blob://` source reader / Mongo / checkpoint。
+- 需要复用 Redis / S3 workspace / `blob://` source reader / checkpoint。
 - 后续会扩展节点，即使当前只有单节点，也应先按多节点结构落地。
 
 ## 推荐目录结构
@@ -27,6 +27,7 @@ script/
 ```
 
 规则：
+
 - `src/pyproject` 放纯业务能力，不直接创建 broker / worker。
 - `src/pipeline` 放 fyuneru 装配层，负责 `WorkerEnv`、broker、actor、节点串联。
 - `worker/main.py` 是唯一 worker 入口，通过 `--node <node>` 选择消费哪个 queue。
@@ -38,11 +39,11 @@ script/
 
 ```toml
 dependencies = [
-    "fyuneru[mongo,pipeline,s3]>=0.1.0",
+    "fyuneru[pipeline,s3]>=0.1.0",
 ]
 ```
 
-如果只用 Redis 队列但不用 S3 / Mongo，也必须包含 `pipeline`；不要假设可选依赖已安装。
+如果只用 Redis 队列但不用 S3，也必须包含 `pipeline`；不要假设可选依赖已安装。
 
 ## 配置要求
 
@@ -57,9 +58,6 @@ s3:
   access_key_id: xxx
   secret_access_key: xxx
   bucket: output-bucket
-mongo:
-  uri: mongodb://localhost:27017
-  db: my-db
 s3_sources:
 - source_id: input
   endpoint: https://s3.example.com
@@ -128,6 +126,7 @@ class NextTask:
 ```
 
 约束：
+
 - actor handler 必须且仅有一个位置参数。
 - 参数类型必须是 dataclass。
 - dataclass 字段变更会影响 Redis 中 envelope 解码；发布顺序应先 consumer 后 producer。
@@ -199,6 +198,7 @@ def queue_for_node(node: str) -> str:
 ```
 
 要点：
+
 - registry 统一注册所有 actor，保证某个 worker 收到下游 queue 也能识别 envelope。
 - `queue_for_node` 是部署入口和 queue 名之间的唯一映射；不要把映射散落到 worker 脚本。
 - 单节点项目同样保留 `Pipeline` dataclass 和 `queue_for_node`，只是当前映射只有一个节点。
@@ -222,8 +222,6 @@ def run_first(task: InputTask, env: WorkerEnv) -> NextTask:
         raise RuntimeError("source_reader 未初始化：config 缺少 s3_sources")
     if env.s3_writer is None:
         raise RuntimeError("s3_writer 未初始化：config 缺少 s3.bucket")
-    if env.mongo_db is None:
-        raise RuntimeError("mongo_db 未初始化：config 缺少 mongo")
     if env.is_past_checkpoint is None or env.advance_checkpoint is None:
         raise RuntimeError("checkpoint 未初始化：config 缺少 redis")
 
@@ -246,6 +244,7 @@ def run_first(task: InputTask, env: WorkerEnv) -> NextTask:
 ```
 
 规则：
+
 - 节点函数入口固定为 `payload + WorkerEnv`。
 - actor 入口先打印 payload，用于定位正在处理的消息；不要依赖 worker 内部异常日志猜测 payload。
 - 每个耗时阶段前打印简短阶段 marker（如 `<node>.stage read_source`），只用于观察阶段耗时边界，避免在每条阶段日志里重复 URI / key 等大字段。

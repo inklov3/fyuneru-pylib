@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-uv sync --group dev --extra redis --extra s3 --extra mongo --extra gemini --extra pipeline --extra media
+uv sync --group dev --extra redis --extra s3 --extra gemini --extra pipeline --extra media
 uv run pyclean src/
 uv run ruff check src/
 uv run pyrefly check src/

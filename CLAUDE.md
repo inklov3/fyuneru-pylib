@@ -20,7 +20,7 @@ uv sync --group dev
 ### Install development dependencies with all optional toolkits
 
 ```bash
-uv sync --group dev --extra redis --extra s3 --extra mongo --extra gemini --extra pipeline --extra media
+uv sync --group dev --extra redis --extra s3 --extra gemini --extra pipeline --extra media
 ```
 
 ### Full release-style verification
@@ -34,7 +34,7 @@ This repository treats `pre_release.sh` as the authoritative full check:
 At the time of writing it runs, in order:
 
 ```bash
-uv sync --group dev --extra redis --extra s3 --extra mongo --extra gemini --extra pipeline --extra media
+uv sync --group dev --extra redis --extra s3 --extra gemini --extra pipeline --extra media
 uv run pyclean src/
 uv run ruff check src/
 uv run pyrefly check src/
@@ -76,9 +76,8 @@ Many modules are intentionally optional. Before editing code that imports one of
 
 - `fyuneru[redis]` → `fyuneru.redis_toolkit`
 - `fyuneru[s3]` → `fyuneru.s3_toolkit`, `fyuneru.s3_source`
-- `fyuneru[mongo]` → `fyuneru.mongo_toolkit`
 - `fyuneru[gemini]` → `fyuneru.gemini_toolkit`
-- `fyuneru[pipeline]` → `fyuneru.task_queue`, `fyuneru.dramatiq_toolkit`
+- `fyuneru[pipeline]` → `fyuneru.task_queue`
 - `fyuneru[media]` installs media dependencies used by downstream code
 
 Do not assume optional dependencies are present in the minimal environment.
@@ -91,7 +90,7 @@ The whole library uses a consistent functional wrapper pattern:
 - `bind_*`: binds a client and resource name, returning a single focused operation closure
 - `build_*`: assembles a higher-level composed object
 
-This convention is the main architectural through-line across Redis, S3, Mongo, Gemini, and task-queue helpers. Preserve it when extending existing modules.
+This convention is the main architectural through-line across Redis, S3, Gemini, and task-queue helpers. Preserve it when extending existing modules.
 
 ### Error model
 
@@ -116,7 +115,7 @@ Key behaviors that matter across multiple modules:
 
 This matters because downstream systems rely on those exact semantics:
 
-- Redis / S3 / Mongo / Gemini config initializers all parse from the merged mapping
+- Redis / S3 / Gemini config initializers all parse from the merged mapping
 - `s3_sources` deduplication does **not** happen during merge; later duplicate handling happens in `s3_source.load_source_registry`
 - worker environment assembly assumes the config has already been normalized by these readers
 
@@ -127,7 +126,7 @@ This matters because downstream systems rely on those exact semantics:
 The repository is a set of small infrastructure wrappers rather than one integrated framework:
 
 - `logger`, `config`, `converter`, `markdown_utils`, `result` are the minimal core
-- `redis_toolkit`, `s3_toolkit`, `mongo_toolkit`, `gemini_toolkit` provide lazy client setup plus a few bound operations
+- `redis_toolkit`, `s3_toolkit`, `gemini_toolkit` provide lazy client setup plus a few bound operations
 - each toolkit is intentionally narrow and composable rather than stateful
 
 ### Multi-source S3 access
@@ -152,7 +151,6 @@ It is not a new backend; it wires existing toolkits into one `WorkerEnv` bundle:
 - optionally creates Redis checkpoint helpers when `redis` config exists
 - optionally creates S3 writer/reader when `s3` config exists
 - optionally creates `blob://` source reader when `s3_sources` exists
-- optionally creates Mongo database handle when `mongo` config exists
 
 Two naming conventions are shared with other modules and should stay stable:
 

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fyuneru import mongo_toolkit, redis_toolkit, s3_source, s3_toolkit
+from fyuneru import redis_toolkit, s3_source, s3_toolkit
 from fyuneru.worker.types import WorkerEnv
 
 
@@ -32,7 +32,6 @@ def setup_worker_env(
     )
     s3_writer, s3_reader = _build_s3(config)
     source_reader = _build_source(config)
-    mongo_db = _build_mongo(config)
 
     return WorkerEnv(
         config=config,
@@ -41,7 +40,6 @@ def setup_worker_env(
         s3_writer=s3_writer,
         s3_reader=s3_reader,
         source_reader=source_reader,
-        mongo_db=mongo_db,
         advance_checkpoint=advance_checkpoint,
         is_past_checkpoint=is_past_checkpoint,
     )
@@ -93,12 +91,6 @@ def _build_source(config: dict[str, Any]):
         return None
     source_registry = s3_source.load_source_registry(config)
     return s3_source.bind_source_reader(source_registry)
-
-
-def _build_mongo(config: dict[str, Any]):
-    if "mongo" not in config:
-        return None
-    return mongo_toolkit.init_database_from_config(config)()
 
 
 def _require_non_empty_text(field_name: str, value: Any) -> str:

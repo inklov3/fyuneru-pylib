@@ -1,4 +1,4 @@
-FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim
+FROM ghcr.io/astral-sh/uv:python3.14-bookworm-slim
 
 WORKDIR /opt/fyuneru
 
@@ -9,4 +9,4 @@ ENV UV_COMPILE_BYTECODE=1 \
 COPY pyproject.toml uv.lock ./
 COPY src ./src
 
-RUN uv sync --frozen --no-dev --extra redis --extra s3 --extra mongo --extra gemini --extra pipeline --extra media
+RUN uv sync --frozen --no-dev --extra redis --extra s3 --extra gemini --extra pipeline --extra media

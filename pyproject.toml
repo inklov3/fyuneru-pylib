@@ -2,7 +2,7 @@
 name = "fyuneru"
 version = "0.1.0"
 description = "Python 工具库，封装常用基础设施组件，提供统一、可组合的函数式接口。"
-requires-python = ">=3.11"
+requires-python = ">=3.14"
 dependencies = [
     "loguru>=0.7.3",
     "pyyaml>=6.0.2",
@@ -27,7 +27,6 @@ s3 = [
 ]
 pipeline = [
   "fyuneru[redis]",
-  "dramatiq>=2.0.1",
 ]
 media = [
     "av>=16.1.0",
@@ -35,9 +34,6 @@ media = [
 ]
 gemini = [
     "google-genai>=1.65.0",
-]
-mongo = [
-    "pymongo>=4.16.0",
 ]
 
 [build-system]

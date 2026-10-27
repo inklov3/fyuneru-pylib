@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING, Any
 from fyuneru.result import ResultE
 
 if TYPE_CHECKING:
-    from pymongo.database import Database
     from redis import Redis, RedisCluster
 
     from fyuneru.s3_toolkit import ObjectStorageReader, ObjectStorageWriter
@@ -21,6 +20,5 @@ class WorkerEnv:
     s3_writer: ObjectStorageWriter | None
     s3_reader: ObjectStorageReader | None
     source_reader: ObjectStorageReader | None
-    mongo_db: Database | None
     advance_checkpoint: Callable[[str], ResultE[None]] | None
     is_past_checkpoint: Callable[[str], ResultE[bool]] | None

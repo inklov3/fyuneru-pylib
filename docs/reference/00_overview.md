@@ -1,6 +1,6 @@
 # fyuneru 概览
 
-Python 工具库，把 Redis / S3 / MongoDB / Redis Streams 任务队列 / Gemini 等基础设施访问整理成更小、更稳定的组合单元。Python `>= 3.11`。
+Python 工具库，把 Redis / S3 / Redis Streams 任务队列 / Gemini 等基础设施访问整理成更小、更稳定的组合单元。Python `>= 3.14`。
 
 ## 核心约定（贯穿所有 toolkit）
 
@@ -21,9 +21,8 @@ uv add fyuneru@git+https://github.com/inklov3/fyuneru-pylib.git
 | 默认安装 | `logger`、`config`、`converter`、`markdown_utils`、`result`、`retry` |
 | `fyuneru[redis]` | `redis_toolkit` |
 | `fyuneru[s3]` | `s3_toolkit`、`s3_source` |
-| `fyuneru[mongo]` | `mongo_toolkit` |
 | `fyuneru[gemini]` | `gemini_toolkit` |
-| `fyuneru[pipeline]` | `task_queue`、`dramatiq_toolkit` |
+| `fyuneru[pipeline]` | `task_queue` |
 | `fyuneru[media]` | `video_toolkit`（需 `av`） |
 
 ```bash
@@ -45,11 +44,9 @@ uv add "fyuneru[redis,s3] @ git+https://github.com/inklov3/fyuneru-pylib.git"
 | `20_redis_toolkit.md` | `fyuneru.redis_toolkit` | `[redis]` |
 | `21_s3_toolkit.md` | `fyuneru.s3_toolkit` | `[s3]` |
 | `22_s3_source.md` | `fyuneru.s3_source` | `[s3]` |
-| `23_mongo_toolkit.md` | `fyuneru.mongo_toolkit` | `[mongo]` |
 | `24_gemini_toolkit.md` | `fyuneru.gemini_toolkit` | `[gemini]` |
 | `25_video_toolkit.md` | `fyuneru.video_toolkit` | `[media]` |
 | `30_task_queue.md` | `fyuneru.task_queue` | `[pipeline]` |
-| `31_dramatiq_toolkit.md` | `fyuneru.dramatiq_toolkit` | `[pipeline]` |
 | `32_worker_env.md` | `fyuneru.worker` | 按启用资源 |
 
 ## 配置 YAML 全貌（参考）
@@ -70,10 +67,6 @@ s3:
   bucket: my-bucket          # init_workspace_from_config 必需
   addressing_style: virtual  # optional: virtual | path
 
-mongo:
-  uri: mongodb://localhost:27017
-  db: my_database
-  timeout: 10000
 
 llm:
   provider: gemini
@@ -97,8 +90,6 @@ from pathlib import Path
 
 from fyuneru.config import read_config_with_override
 from fyuneru.gemini_toolkit import init_client_from_config as init_llm_client
-from fyuneru.mongo_toolkit import init_client_from_config as init_mongo_client
-from fyuneru.mongo_toolkit import init_database_from_config
 from fyuneru.redis_toolkit import init_client_from_config as init_redis_client
 from fyuneru.s3_toolkit import init_client_from_config as init_s3_client
 from fyuneru.s3_toolkit import init_workspace_from_config
@@ -107,8 +98,6 @@ cfg = read_config_with_override(base=Path("config.yml"), override=Path("pod.yml"
 
 redis = init_redis_client(cfg)()
 s3_client = init_s3_client(cfg)()
-mongo_client = init_mongo_client(cfg)()
 llm = init_llm_client(cfg)()
 s3_writer, s3_reader, s3_deleter = init_workspace_from_config(cfg)()
-db = init_database_from_config(cfg)()
 ```

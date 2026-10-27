@@ -10,7 +10,6 @@ uv add fyuneru@git+https://github.com/inklov3/fyuneru-pylib.git
 # With optional dependencies
 uv add "fyuneru[redis] @ git+https://github.com/inklov3/fyuneru-pylib.git"
 uv add "fyuneru[s3] @ git+https://github.com/inklov3/fyuneru-pylib.git"
-uv add "fyuneru[mongo] @ git+https://github.com/inklov3/fyuneru-pylib.git"
 uv add "fyuneru[pipeline] @ git+https://github.com/inklov3/fyuneru-pylib.git"   # Redis Streams task queue
 uv add "fyuneru[media] @ git+https://github.com/inklov3/fyuneru-pylib.git"      # av + Pillow, video_toolkit
 uv add "fyuneru[gemini] @ git+https://github.com/inklov3/fyuneru-pylib.git"     # Google Gemini
@@ -48,7 +47,6 @@ tqdm_loguru(iterable, level="INFO", **tqdm_kwargs) -> tqdm
 
 ```python
 from fyuneru.config import (
-    parse_mongo_config,
     parse_redis_config,
     parse_s3_config,
     read_config,
@@ -69,7 +67,6 @@ read_config_with_override(base: Path, override: Path | None = None) -> dict[str,
 
 parse_redis_config(config: dict[str, Any]) -> RedisConfig
 parse_s3_config(config: dict[str, Any]) -> S3Config
-parse_mongo_config(config: dict[str, Any]) -> MongoConfig
 # Typed parser with explicit field validation and path-aware errors.
 # parse_s3_config supports optional addressing_style: "virtual" | "path".
 ```
@@ -144,6 +141,7 @@ bind_retrying(
 ```
 
 **Usage:**
+
 ```python
 from fyuneru.gemini_toolkit import GeminiTransientError
 from fyuneru.retry import RetryPolicy, retry_call
@@ -194,6 +192,7 @@ calculate_checkpoint_key(workspace: str, label: str) -> str
 ```
 
 **Checkpoint pattern:**
+
 ```python
 from fyuneru.result import unwrap
 
@@ -282,6 +281,7 @@ class ObjectStat:
 ```
 
 **Usage (idempotent reuse + presigned handoff):**
+
 ```python
 from fyuneru.result import unwrap
 from fyuneru.s3_toolkit import bind_s3_presigner, bind_s3_probe
@@ -329,6 +329,7 @@ bind_source_reader(registry: dict[str, dict]) -> ObjectStorageReader
 ```
 
 **Usage:**
+
 ```python
 from fyuneru.config import read_config_with_override
 from fyuneru.result import unwrap
@@ -341,9 +342,11 @@ data = unwrap(read("blob://my-images/photos/img001.jpg", lambda body: body.read(
 ```
 
 **Overlay note:**
+
 - For `s3_sources`, `read_config_with_override` keeps append behavior; dedupe by `source_id` is applied in `load_source_registry` (later item wins).
 
 **Config format (main YAML `s3_sources` section):**
+
 ```yaml
 s3_sources:
 - source_id: my-images
@@ -360,51 +363,9 @@ s3_sources:
   secret_access_key: xxx
 ```
 
-### mongo_toolkit (`fyuneru.mongo_toolkit`)
-
-Requires: `fyuneru[mongo]`
-
-```python
-from fyuneru.mongo_toolkit import (
-    bind_collection,
-    ensure_index,
-    init_client,
-    init_client_from_config,
-    init_database_from_config,
-)
-
-init_client(uri: str, timeout: int = 10000)
-    -> Callable[[], MongoClient]
-# timeout is serverSelectionTimeoutMS
-# Always returns a MongoClient initializer.
-
-init_client_from_config(config: dict) -> Callable[[], MongoClient]
-# Reads config["mongo"]. Returns Callable[[], MongoClient].
-# Raises KeyError if "mongo" section missing.
-
-init_database_from_config(config: dict) -> Callable[[], Database]
-# Reads config["mongo"] including required "db" field.
-# Returns Callable[[], Database].
-
-bind_collection(db: Database, name: str) -> Collection
-# Returns db[name] after validating collection name.
-
-ensure_index(
-    collection: Collection,
-    name: str,
-    keys: list[tuple[str, int]],
-    unique: bool = False,
-    sparse: bool = False,
-    background: bool = True,
-) -> ResultE[str]
-# Creates index when absent.
-# If same index name exists but keys/unique/sparse mismatch expected values,
-# returns Failure with conflict error.
-```
-
 ### worker (`fyuneru.worker`)
 
-Requires optional dependencies based on enabled resources (`redis` / `s3` / `mongo`).
+Requires optional dependencies based on enabled resources (`redis` / `s3`).
 
 ```python
 from fyuneru.worker import (
@@ -416,7 +377,7 @@ from fyuneru.worker import (
 
 setup_worker_env(label: str, config: dict[str, Any], *, workspace: str) -> WorkerEnv
 # Builds worker environment with optional resources.
-# workspace is passed explicitly; redis/s3/mongo/source_reader are created only if config sections exist.
+# workspace is passed explicitly; redis/s3/source_reader are created only if config sections exist.
 
 calculate_checkpoint_key(workspace: str, label: str) -> str
 # Returns "{workspace}:checkpoint:{label}".
@@ -530,26 +491,11 @@ broker = build_broker(redis_client, namespace=..., hooks=hooks)
 失败现在**静默进 xq**而不是杀 worker。这是必要妥协（避免一条坏消息卡死整个队列），
 但意味着滚动发布期间——producer 已升级、consumer 还是旧版——valid 消息会被旧
 worker 当成"坏消息"丢进 xq。两条防线：
+
 - 部署顺序：先发 consumer，再发 producer。任何向前兼容增量都安全。
 - 监控：通过 `on_handle_xq` hook 按 `error` 类型分桶——`ValueError("payload 字段
   与 dataclass 不匹配")`、`KeyError("actor 未注册")` 等都是 schema 错位信号，应该
   与"actor 抛错"分开告警。
-
-### dramatiq_toolkit (`fyuneru.dramatiq_toolkit`)
-
-Requires: `fyuneru[pipeline]`
-
-```python
-from fyuneru.dramatiq_toolkit import (
-    enqueue_many,
-    new_message,
-    send_message,
-)
-
-enqueue_many(broker: Broker, messages: list[Message]) -> EnqueueManyResult
-# Batch enqueue helper for Dramatiq.
-# Returns success_count / failure_count / failures[(index, error)].
-```
 
 ### gemini_toolkit (`fyuneru.gemini_toolkit`)
 
@@ -617,6 +563,7 @@ response_to_raw_dict(response: GenerateContentResponse) -> dict[str, Any]
 ```
 
 **Usage (video captioning with bounded retry):**
+
 ```python
 from fyuneru.gemini_toolkit import (
     GeminiTransientError,
@@ -646,6 +593,7 @@ result = response_to_json_object(response)  # then the structured result
 ```
 
 **Usage (text-only structured output):**
+
 ```python
 client = init_client(api_key="sk_xxx", endpoint="https://xxx")()
 response = client.models.generate_content(
@@ -739,6 +687,7 @@ class VideoProcessError(RuntimeError): ...
 ```
 
 **Usage:**
+
 ```python
 from pathlib import Path
 
@@ -776,10 +725,6 @@ s3:
   bucket: my-bucket          # required by init_workspace_from_config
   addressing_style: virtual  # optional: virtual | path
 
-mongo:
-  uri: mongodb://localhost:27017
-  db: my_database   # required by init_database_from_config
-  timeout: 10000    # optional, default 10000
 
 llm:
   provider: gemini
@@ -802,15 +747,12 @@ s3_sources:                        # optional, for blob:// multi-source
 from pathlib import Path
 
 from fyuneru.config import (
-    parse_mongo_config,
     parse_redis_config,
     parse_s3_config,
     read_config,
     read_config_with_override,
 )
 from fyuneru.gemini_toolkit import init_client_from_config as init_llm_client
-from fyuneru.mongo_toolkit import init_client_from_config as init_mongo_client
-from fyuneru.mongo_toolkit import init_database_from_config
 from fyuneru.redis_toolkit import init_client_from_config as init_redis_client
 from fyuneru.s3_toolkit import init_client_from_config as init_s3_client
 from fyuneru.s3_toolkit import init_workspace_from_config
@@ -824,15 +766,12 @@ cfg_with_pod = read_config_with_override(
 # Typed parsers: explicit field validation and stable value types
 redis_cfg = parse_redis_config(cfg_with_pod)
 s3_cfg = parse_s3_config(cfg_with_pod)
-mongo_cfg = parse_mongo_config(cfg_with_pod)
 
 # Low-level: each returns a Callable that creates the raw client
 redis = init_redis_client(cfg_with_pod)()
 s3_client = init_s3_client(cfg_with_pod)()
-mongo_client = init_mongo_client(cfg_with_pod)()
 llm = init_llm_client(cfg_with_pod)()
 
-# High-level: returns workspace objects bound to bucket/db from config
+# High-level: returns workspace objects bound to the bucket from config
 s3_writer, s3_reader, s3_deleter = init_workspace_from_config(cfg_with_pod)()
-db = init_database_from_config(cfg_with_pod)()
 ```

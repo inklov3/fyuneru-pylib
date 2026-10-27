@@ -222,14 +222,14 @@ deploy/supplier-unpack-worker.example.yml
   - 暂时可以继续把 `source_reader` 标为 `ObjectStorageReader | None`。
   - 文档中明确它是 blob URI reader，当前由 object storage reader 实现。
 
-- `skill/references/21_s3_toolkit.md`
+- `docs/reference/21_s3_toolkit.md`
   - 更新 reader/writer API。
   - 强调 reader 的 `consume` 同步消费约束。
 
-- `skill/references/22_s3_source.md`
+- `docs/reference/22_s3_source.md`
   - 更新 `bind_source_reader` 用法。
 
-- `skill/references/32_worker_env.md`
+- `docs/reference/32_worker_env.md`
   - 补充 `source_reader` 与 `ObjectStorageReader` 的关系。
 
 ### pipeline-ant-video-multitrack

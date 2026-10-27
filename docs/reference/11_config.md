@@ -10,7 +10,6 @@ from fyuneru.config import (
     read_config_with_override,
     parse_redis_config,
     parse_s3_config,
-    parse_mongo_config,
 )
 
 read_config(config: Path) -> dict[str, Any]
@@ -27,7 +26,6 @@ read_config_with_override(base: Path, override: Path | None = None) -> dict[str,
 
 parse_redis_config(config: dict[str, Any]) -> RedisConfig
 parse_s3_config(config: dict[str, Any]) -> S3Config
-parse_mongo_config(config: dict[str, Any]) -> MongoConfig
 # 强类型解析，显式字段校验，错误带 path 信息。
 # parse_s3_config 支持可选 addressing_style: "virtual" | "path"。
 ```

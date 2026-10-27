@@ -33,13 +33,6 @@ class S3Config:
     addressing_style: str
 
 
-@dataclass(frozen=True)
-class MongoConfig:
-    uri: str
-    db: str | None
-    timeout: int
-
-
 @safe
 def _read_yaml_mapping(config: Path) -> dict[str, Any]:
     loaded = safe_load(config.read_text(encoding="utf-8"))
@@ -124,9 +117,7 @@ def parse_s3_config(config: dict[str, Any]) -> S3Config:
         "virtual",
     )
     if addressing_style not in {"virtual", "path"}:
-        raise ValueError(
-            "s3.addressing_style 仅支持 'virtual' 或 'path'"
-        )
+        raise ValueError("s3.addressing_style 仅支持 'virtual' 或 'path'")
 
     return S3Config(
         endpoint=endpoint,
@@ -136,14 +127,6 @@ def parse_s3_config(config: dict[str, Any]) -> S3Config:
         bucket=bucket,
         addressing_style=addressing_style,
     )
-
-
-def parse_mongo_config(config: dict[str, Any]) -> MongoConfig:
-    mongo_cfg = _require_mapping(config, "mongo")
-    uri = _require_text(mongo_cfg, "uri", "mongo.uri")
-    db = _optional_text(mongo_cfg, "db", "mongo.db")
-    timeout = _optional_int(mongo_cfg, "timeout", "mongo.timeout", 1000 * 10)
-    return MongoConfig(uri=uri, db=db, timeout=timeout)
 
 
 def _merge_config_value(base: Any, override: Any, path: tuple[str, ...]) -> Any:

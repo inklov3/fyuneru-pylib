@@ -4,11 +4,11 @@
 
 ## 项目定位
 
-`fyuneru` 用来把 Redis、S3、MongoDB、Redis Streams 任务队列、Gemini 等基础设施访问整理成更小、更稳定的组合单元。
+`fyuneru` 用来把 Redis、S3、Redis Streams 任务队列、Gemini 等基础设施访问整理成更小、更稳定的组合单元。
 
 - 推荐从子模块导入，例如 `from fyuneru.redis_toolkit import bind_redis_set_writer`
-- 默认安装只包含核心依赖；使用 Redis、MongoDB、Gemini 等能力时，需要安装对应 extra
-- `config.py` 只读取 YAML，并支持 `base.yml + pod.yml` 的单层增量覆盖；同时提供 `parse_redis_config` / `parse_s3_config` / `parse_mongo_config` 强类型解析器
+- 默认安装只包含核心依赖；使用 Redis、Gemini 等能力时，需要安装对应 extra
+- `config.py` 只读取 YAML，并支持 `base.yml + pod.yml` 的单层增量覆盖；同时提供 `parse_redis_config` / `parse_s3_config` 强类型解析器
 
 ## 核心约定
 
@@ -20,7 +20,7 @@
 
 ## 安装
 
-要求：Python `>= 3.11`
+要求：Python `>= 3.14`
 
 以下示例默认使用 GitHub 源安装：
 
@@ -35,7 +35,6 @@ uv add fyuneru@git+https://github.com/inklov3/fyuneru-pylib.git
 | 默认安装 | 日志、YAML 配置、pickle/JSON 转换、Markdown 工具、有界重试 | `logger`、`config`、`converter`、`markdown_utils`、`retry` |
 | `fyuneru[redis]` | Redis client、Set 封装、checkpoint key 计算 | `redis_toolkit`、`redis_toolkit.init_client_from_config` |
 | `fyuneru[s3]` | S3 client、对象读写删除列举、多源 `blob://` 读取 | `s3_toolkit`、`s3_source`、`s3_toolkit.init_client_from_config`、`s3_toolkit.init_workspace_from_config` |
-| `fyuneru[mongo]` | MongoClient 惰性初始化与按配置获取 `Database` | `mongo_toolkit`、`mongo_toolkit.init_client_from_config`、`mongo_toolkit.init_database_from_config` |
 | `fyuneru[gemini]` | Google Gemini client、视频输入构造、错误分类与结构化 JSON 输出 | `gemini_toolkit`、`gemini_toolkit.init_client_from_config` |
 | `fyuneru[pipeline]` | Redis Streams 任务队列能力 | `task_queue` 及 `redis` 相关模块 |
 | `fyuneru[media]` | 视频降采样（分辨率/帧率规约、只保留主视频流） | `video_toolkit` |
@@ -46,7 +45,7 @@ uv add fyuneru@git+https://github.com/inklov3/fyuneru-pylib.git
 uv add "fyuneru[redis,s3] @ git+https://github.com/inklov3/fyuneru-pylib.git"
 ```
 
-任何依赖可选第三方包的模块都应先安装对应 extra，例如 `fyuneru.redis_toolkit`、`fyuneru.s3_toolkit`、`fyuneru.mongo_toolkit`、`fyuneru.task_queue`、`fyuneru.gemini_toolkit`。
+任何依赖可选第三方包的模块都应先安装对应 extra，例如 `fyuneru.redis_toolkit`、`fyuneru.s3_toolkit`、`fyuneru.task_queue`、`fyuneru.gemini_toolkit`。
 
 ## 模块概览
 
@@ -60,11 +59,16 @@ uv add "fyuneru[redis,s3] @ git+https://github.com/inklov3/fyuneru-pylib.git"
 | `fyuneru.redis_toolkit` | Redis / RedisCluster 惰性初始化、Set 操作、checkpoint key 计算 | `redis` |
 | `fyuneru.s3_toolkit` | S3 client 初始化、对象读写删除列举、预签名 URL 与对象探测 | `s3` |
 | `fyuneru.s3_source` | 通过 `blob://桶id/key` 协议透明读取多个 S3 源 | `s3` |
-| `fyuneru.mongo_toolkit` | MongoClient 惰性初始化 | `mongo` |
 | `fyuneru.task_queue` | Redis Streams broker、Actor 注册、消息投递与 Worker 消费 | `pipeline` |
-| `fyuneru.dramatiq_toolkit` | Dramatiq RedisBroker 构建、消息构造与批量投递 | `pipeline` |
 | `fyuneru.gemini_toolkit` | Gemini client 初始化、视频输入、错误分类与结构化输出 | `gemini` |
 | `fyuneru.video_toolkit` | 视频降采样为单流低规格 MP4，可版本化 `MediaProfile` | `media` |
+
+## 文档
+
+- [完整 API 指南](src/fyuneru/GUIDE.md)
+- [通用模块参考与索引](docs/reference/00_overview.md)：按需阅读各模块参考，适用于所有开发者和 agent。
+- [下游 pipeline 项目参考](docs/reference/40_pipeline_project.md)
+- [仓库开发约定](AGENTS.md)
 
 ## 快速上手
 
@@ -90,15 +94,12 @@ for item in tqdm_loguru(items, desc="Processing"):
 from pathlib import Path
 
 from fyuneru.config import (
-    parse_mongo_config,
     parse_redis_config,
     parse_s3_config,
     read_config,
     read_config_with_override,
 )
 from fyuneru.gemini_toolkit import init_client_from_config as init_llm_client
-from fyuneru.mongo_toolkit import init_client_from_config as init_mongo_client
-from fyuneru.mongo_toolkit import init_database_from_config
 from fyuneru.redis_toolkit import init_client_from_config as init_redis_client
 from fyuneru.s3_toolkit import init_client_from_config as init_s3_client
 from fyuneru.s3_toolkit import init_workspace_from_config
@@ -112,17 +113,14 @@ cfg_with_pod = read_config_with_override(
 # 强类型配置解析（统一字段校验与报错路径）
 redis_cfg = parse_redis_config(cfg_with_pod)
 s3_cfg = parse_s3_config(cfg_with_pod)
-mongo_cfg = parse_mongo_config(cfg_with_pod)
 
 # 底层 helper：返回裸 client 工厂
 redis = init_redis_client(cfg_with_pod)()
 s3_client = init_s3_client(cfg_with_pod)()
-mongo_client = init_mongo_client(cfg_with_pod)()
 llm = init_llm_client(cfg_with_pod)()
 
-# 高层 helper：直接绑定配置中的 bucket / db
+# 高层 helper：直接绑定配置中的 bucket
 write, read, delete = init_workspace_from_config(cfg_with_pod)()
-db = init_database_from_config(cfg_with_pod)()
 ```
 
 ### Pod YAML 增量覆盖规则
@@ -225,18 +223,6 @@ registry = load_source_registry(config)
 read = bind_source_reader(registry)
 
 data = unwrap(read("blob://my-images/photos/2024/img001.jpg", lambda body: body.read()))
-```
-
-### MongoDB
-
-`mongo_toolkit.init_client(uri, timeout)` 只返回 `MongoClient` 工厂；如果你想直接拿到 `Database`，应通过 `mongo_toolkit.init_database_from_config`。
-
-```python
-from fyuneru.mongo_toolkit import init_client
-
-client = init_client(uri="mongodb://localhost:27017")()
-db = client["my_database"]
-collection = db["items"]
 ```
 
 ### 分布式任务
@@ -410,7 +396,7 @@ uv sync --group dev
 如果需要验证可选模块，补上对应 extra：
 
 ```bash
-uv sync --group dev --extra redis --extra s3 --extra mongo --extra gemini --extra pipeline --extra media
+uv sync --group dev --extra redis --extra s3 --extra gemini --extra pipeline --extra media
 ```
 
 发布前检查：
@@ -422,7 +408,7 @@ uv sync --group dev --extra redis --extra s3 --extra mongo --extra gemini --extr
 脚本会先同步完整开发/可选依赖，再顺序执行：
 
 ```bash
-uv sync --group dev --extra redis --extra s3 --extra mongo --extra gemini --extra pipeline --extra media
+uv sync --group dev --extra redis --extra s3 --extra gemini --extra pipeline --extra media
 uv run pyclean src/
 uv run ruff check src/
 uv run pyrefly check src/

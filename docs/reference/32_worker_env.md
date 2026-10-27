@@ -1,8 +1,8 @@
 # fyuneru.worker
 
-下游 worker 进程的环境装配：按 config 段存在与否惰性创建 redis / s3 / mongo / source_reader。
+下游 worker 进程的环境装配：按 config 段存在与否惰性创建 redis / s3 / source_reader。
 
-需要：按启用资源安装对应 extra（`redis` / `s3` / `mongo`）
+需要：按启用资源安装对应 extra（`redis` / `s3`）
 
 ## API
 
@@ -16,7 +16,7 @@ from fyuneru.worker import (
 
 setup_worker_env(label: str, config: dict[str, Any], *, workspace: str) -> WorkerEnv
 # 构建 worker 环境，按可选资源装配。
-# 要求显式传入非空 workspace；redis / s3 / mongo / source_reader 只在 config 对应段存在时创建。
+# 要求显式传入非空 workspace；redis / s3 / source_reader 只在 config 对应段存在时创建。
 # s3_writer 接受 BinaryIO；s3_reader/source_reader 使用受控消费式读取。
 
 calculate_checkpoint_key(workspace: str, label: str) -> str
@@ -45,4 +45,4 @@ result = env.source_reader("blob://source-id/object/key", consume)
 - `setup_worker_env` 不会因为某段 config 缺失而抛错；只是对应资源不创建（WorkerEnv 字段为 None）。调用方使用前应做 None 检查
 - `s3_reader` / `source_reader` 不返回裸流；读取、写本地文件、解码等操作应放在 `consume` 内同步完成
 - `calculate_result_key` 用 `.pkl` 后缀是默认约定，配合 `fyuneru.converter.unsafe_object_to_bytes` 使用（仅可信内部）
-- 改本模块或 redis/s3/mongo 绑定逻辑时手动跑 `uv run python test/test_worker_env.py`
+- 改本模块或 redis/s3 绑定逻辑时手动跑 `uv run python test/test_worker_env.py`
