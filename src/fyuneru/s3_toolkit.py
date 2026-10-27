@@ -1,18 +1,13 @@
-from __future__ import annotations
-
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, BinaryIO, Protocol, TypeVar, cast, overload
+from typing import BinaryIO, Protocol, TypeVar, overload
+from urllib.parse import urlsplit
 
-from boto3 import Session
-from botocore.config import Config
-from botocore.exceptions import ClientError
+from minio import Minio
+from minio.error import S3Error
 
 from fyuneru.config import parse_s3_config
 from fyuneru.result import ResultE, safe
-
-if TYPE_CHECKING:
-    from mypy_boto3_s3.client import S3Client
 
 T = TypeVar("T")
 
@@ -35,9 +30,7 @@ class ObjectStorageWriter(Protocol):
 
 class ObjectStorageReader(Protocol):
     def __call__(
-        self,
-        key: str,
-        consume: Callable[[ReadableBinaryStream], T],
+        self, key: str, consume: Callable[[ReadableBinaryStream], T]
     ) -> ResultE[T]: ...
 
 
@@ -47,18 +40,12 @@ class ObjectStorageDeleter(Protocol):
 
 class ObjectStorageLister(Protocol):
     def __call__(
-        self,
-        prefix: str,
-        suffix: str | None = None,
+        self, prefix: str, suffix: str | None = None
     ) -> ResultE[list[str]]: ...
 
 
 class ObjectStoragePresigner(Protocol):
-    def __call__(
-        self,
-        key: str,
-        expires_seconds: int = 3600,
-    ) -> ResultE[str]: ...
+    def __call__(self, key: str, expires_seconds: int = 3600) -> ResultE[str]: ...
 
 
 class ObjectStorageProbe(Protocol):
@@ -80,35 +67,43 @@ def init_client(
     access_key_id: str,
     secret_access_key: str,
     region_name: str | None = None,
-    config: Config | None = None,
     addressing_style: str = "virtual",
-) -> Callable[[], S3Client]:
-    if config is None:
-        config = Config(
-            signature_version="s3v4",
-            s3=cast(Any, {"addressing_style": addressing_style}),
+) -> Callable[[], Minio]:
+    """创建惰性 MinIO 客户端工厂；endpoint 可包含 http(s) scheme。"""
+    if addressing_style not in {"path", "virtual"}:
+        raise ValueError("addressing_style 必须为 'path' 或 'virtual'")
+    parsed = urlsplit(endpoint if "://" in endpoint else f"https://{endpoint}")
+    if (
+        parsed.scheme not in {"http", "https"}
+        or not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.path not in {"", "/"}
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise ValueError("endpoint 必须是主机地址，可带 scheme 和端口，不可含路径")
+    host = parsed.netloc
+    secure = parsed.scheme == "https"
+    def create_client() -> Minio:
+        client = Minio(
+            host,
+            access_key=access_key_id,
+            secret_key=secret_access_key,
+            secure=secure,
+            region=region_name,
         )
-    session: Session = Session(
-        aws_access_key_id=access_key_id,
-        aws_secret_access_key=secret_access_key,
-        region_name=region_name,
-    )
-
-    def create_client() -> S3Client:
-        return session.client(
-            service_name="s3",
-            endpoint_url=endpoint,
-            config=config,
-        )
+        if addressing_style == "virtual":
+            client.enable_virtual_style_endpoint()
+        else:
+            client.disable_virtual_style_endpoint()
+        return client
 
     return create_client
 
 
-def init_client_from_config(config: dict) -> Callable[[], S3Client]:
-    """从配置构建 s3 client initializer。
-
-    config["s3"] 必须包含 endpoint, access_key_id, secret_access_key。可选: region_name。
-    """
+def init_client_from_config(config: dict) -> Callable[[], Minio]:
+    """从配置构建 MinIO 客户端工厂。"""
     s3_cfg = parse_s3_config(config)
     return init_client(
         endpoint=s3_cfg.endpoint,
@@ -124,15 +119,10 @@ def init_workspace_from_config(
 ) -> Callable[
     [], tuple[ObjectStorageWriter, ObjectStorageReader, ObjectStorageDeleter]
 ]:
-    """从配置构建 s3 workspace initializer。
-
-    config["s3"] 必须包含 endpoint, access_key_id, secret_access_key, bucket。可选: region_name。
-    返回可直接使用的 (writer, reader, deleter) 元组工厂。
-    """
+    """从配置构建绑定 bucket 的 writer、reader、deleter 工厂。"""
     s3_cfg = parse_s3_config(config)
     if s3_cfg.bucket is None:
         raise KeyError("缺少字段: s3.bucket")
-
     init = init_client(
         endpoint=s3_cfg.endpoint,
         access_key_id=s3_cfg.access_key_id,
@@ -142,7 +132,9 @@ def init_workspace_from_config(
     )
     bucket = s3_cfg.bucket
 
-    def create_workspace():
+    def create_workspace() -> tuple[
+        ObjectStorageWriter, ObjectStorageReader, ObjectStorageDeleter
+    ]:
         client = init()
         return (
             bind_s3_writer(client, bucket),
@@ -153,82 +145,74 @@ def init_workspace_from_config(
     return create_workspace
 
 
-def bind_s3_writer(client: S3Client, bucket: str) -> ObjectStorageWriter:
+def bind_s3_writer(client: Minio, bucket: str) -> ObjectStorageWriter:
     @safe
     def write_object(key: str, body: BinaryIO) -> None:
-        client.upload_fileobj(body, bucket, key)
+        # 长度未知时由 MinIO SDK 使用 multipart 上传。
+        client.put_object(bucket, key, body, length=-1, part_size=10 * 1024 * 1024)
 
     return write_object
 
 
-def bind_s3_reader(client: S3Client, bucket: str) -> ObjectStorageReader:
-    """返回受控消费式对象 reader，消费函数必须同步读取流。"""
+def bind_s3_reader(client: Minio, bucket: str) -> ObjectStorageReader:
+    """返回受控消费式 reader；消费回调同步读取，响应始终关闭。"""
 
     @safe
-    def read_object(
-        key: str,
-        consume: Callable[[ReadableBinaryStream], T],
-    ) -> T:
-        response = client.get_object(Bucket=bucket, Key=key)
-        body = cast(ReadableBinaryStream, response["Body"])
+    def read_object(key: str, consume: Callable[[ReadableBinaryStream], T]) -> T:
+        response = client.get_object(bucket, key)
         try:
-            return consume(body)
+            return consume(response)
         finally:
-            body.close()
+            try:
+                response.close()
+            finally:
+                response.release_conn()
 
     return read_object
 
 
-def bind_s3_deleter(client: S3Client, bucket: str) -> ObjectStorageDeleter:
+def bind_s3_deleter(client: Minio, bucket: str) -> ObjectStorageDeleter:
     @safe
     def delete_object(key: str) -> None:
-        client.delete_object(Bucket=bucket, Key=key)
+        client.remove_object(bucket, key)
 
     return delete_object
 
 
-def bind_s3_presigner(client: S3Client, bucket: str) -> ObjectStoragePresigner:
-    """返回预签名 GET URL 生成器。
-
-    预签名把"谁能读这个对象"和"谁在读"解耦：上游模型服务无需任何
-    凭据即可拉取 workspace 里的派生对象，凭据不离开本进程。
-    """
+def bind_s3_presigner(client: Minio, bucket: str) -> ObjectStoragePresigner:
+    """返回预签名 GET URL 生成器。"""
 
     @safe
     def presign(key: str, expires_seconds: int = 3600) -> str:
         if expires_seconds < 1:
             raise ValueError("expires_seconds 必须大于 0")
-        return client.generate_presigned_url(
-            ClientMethod="get_object",
-            Params={"Bucket": bucket, "Key": key},
-            ExpiresIn=expires_seconds,
+        from datetime import timedelta
+
+        return client.presigned_get_object(
+            bucket, key, expires=timedelta(seconds=expires_seconds)
         )
 
     return presign
 
 
-def bind_s3_probe(client: S3Client, bucket: str) -> ObjectStorageProbe:
-    """返回对象探测器：存在时给出大小/ETag，不存在时返回 None。
-
-    幂等复用的前置条件是"能便宜地判断产物是否已就绪"，HEAD 就是这个
-    判断；404 属于正常答案而非错误，所以映射为 None 而不是 Failure。
-    """
+def bind_s3_probe(client: Minio, bucket: str) -> ObjectStorageProbe:
+    """对象不存在时返回 None；其他 SDK 错误由 ResultE 保留。"""
 
     @safe
     def probe(key: str) -> ObjectStat | None:
         try:
-            response = client.head_object(Bucket=bucket, Key=key)
-        except ClientError as error:
-            status = error.response.get("ResponseMetadata", {}).get("HTTPStatusCode")
-            code = error.response.get("Error", {}).get("Code")
-            if status == 404 or code in {"404", "NoSuchKey", "NotFound"}:
+            stat = client.stat_object(bucket, key)
+        except S3Error as error:
+            if error.code in {"NoSuchKey", "NoSuchObject", "NotFound"}:
                 return None
             raise
+        if stat.size is None:
+            raise ValueError("对象元数据缺少大小")
         return ObjectStat(
             key=key,
-            size_bytes=int(response.get("ContentLength", 0)),
-            etag=_strip_etag(response.get("ETag")),
-            content_type=response.get("ContentType"),
+            size_bytes=stat.size,
+            etag=_strip_etag(stat.etag),
+            content_type=stat.content_type,
         )
 
     return probe
@@ -240,33 +224,17 @@ def _strip_etag(value: str | None) -> str | None:
     return value.strip('"') or None
 
 
-def bind_s3_lister(client: S3Client, bucket: str) -> ObjectStorageLister:
+def bind_s3_lister(client: Minio, bucket: str) -> ObjectStorageLister:
     @safe
     def list_objects(prefix: str, suffix: str | None = None) -> list[str]:
         keys: list[str] = []
-        continuation_token: str | None = None
-        while True:
-            kwargs: dict = {"Bucket": bucket, "Prefix": prefix}
-            if continuation_token is not None:
-                kwargs["ContinuationToken"] = continuation_token
-            response = client.list_objects_v2(**kwargs)
-            for obj in response.get("Contents", []):
-                key = obj.get("Key")
-                if key is None:
-                    continue
-                if key.endswith("/"):
-                    continue
-                if suffix is not None and not key.endswith(suffix):
-                    continue
-                keys.append(key)
-            if not response.get("IsTruncated", False):
-                break
-            continuation_token = response.get("NextContinuationToken")
-            if not continuation_token:
-                raise RuntimeError(
-                    "S3 list_objects_v2 报告 IsTruncated=True 但未返回 "
-                    f"NextContinuationToken (prefix={prefix})"
-                )
+        for obj in client.list_objects(bucket, prefix=prefix, recursive=True):
+            key = obj.object_name
+            if key is None or not key.startswith(prefix) or key.endswith("/"):
+                continue
+            if suffix is not None and not key.endswith(suffix):
+                continue
+            keys.append(key)
         return keys
 
     return list_objects

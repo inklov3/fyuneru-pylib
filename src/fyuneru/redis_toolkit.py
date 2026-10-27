@@ -2,8 +2,6 @@
 Redis 工具类
 """
 
-from __future__ import annotations
-
 from collections.abc import Callable
 from functools import partial
 from typing import Protocol

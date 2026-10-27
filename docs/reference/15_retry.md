@@ -103,33 +103,32 @@ response = retry_call(
 ### 2. S3 网关抖动
 
 ```python
-from botocore.exceptions import ClientError
+from minio.error import S3Error
+from fyuneru.result import unwrap
 from fyuneru.retry import RetryPolicy, retry_call
 
-def is_retryable_s3_error(error: Exception) -> bool:
-    if isinstance(error, ClientError):
-        return error.response["ResponseMetadata"]["HTTPStatusCode"] in (500, 503)
-    return False
-
-# 筛选后的异常基类
 class RetryableS3Error(RuntimeError):
     pass
 
-def safe_upload():
+def upload():
     try:
-        return writer(key, body)
-    except ClientError as error:
-        if is_retryable_s3_error(error):
+        # 每次重试重新打开输入流，避免复用已消费的流。
+        with file_path.open("rb") as body:
+            return unwrap(writer(key, body))
+    except S3Error as error:
+        if error.code in {"SlowDown", "InternalError", "ServiceUnavailable"}:
             raise RetryableS3Error() from error
         raise
 
 result = retry_call(
-    operation=safe_upload,
+    operation=upload,
     policy=RetryPolicy(attempts=3, base_seconds=0.5),
     retry_on=(RetryableS3Error,),
     label="s3_upload",
 )
 ```
+
+实际可重试的错误码和网络异常应按对象存储服务明确配置。
 
 ### 3. 与 Result 错误模型集成
 

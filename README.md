@@ -57,7 +57,7 @@ uv add "fyuneru[redis,s3] @ git+https://github.com/inklov3/fyuneru-pylib.git"
 | `fyuneru.markdown_utils` | 去掉 Markdown 代码块包裹，保留正文 | 默认安装 |
 | `fyuneru.retry` | 指数退避 + 拖动的有界重试，只重试显式声明的异常 | 默认安装 |
 | `fyuneru.redis_toolkit` | Redis / RedisCluster 惰性初始化、Set 操作、checkpoint key 计算 | `redis` |
-| `fyuneru.s3_toolkit` | S3 client 初始化、对象读写删除列举、预签名 URL 与对象探测 | `s3` |
+| `fyuneru.s3_toolkit` | MinIO Python SDK client 初始化、对象读写删除列举、预签名 URL 与对象探测 | `s3` |
 | `fyuneru.s3_source` | 通过 `blob://桶id/key` 协议透明读取多个 S3 源 | `s3` |
 | `fyuneru.task_queue` | Redis Streams broker、Actor 注册、消息投递与 Worker 消费 | `pipeline` |
 | `fyuneru.gemini_toolkit` | Gemini client 初始化、视频输入、错误分类与结构化输出 | `gemini` |
@@ -168,6 +168,10 @@ unwrap(delete_set("item-001"))
 
 ### S3 对象存储
 
+`s3_toolkit` 基于 MinIO Python SDK（`Minio`）公开接口，而非 boto3/botocore。endpoint 支持 http(s) scheme 与端口，不支持路径；`addressing_style` 默认 `virtual`，可设为 `path`。
+
+- `bind_s3_writer` 使用 MinIO `put_object(length=-1, part_size=10 MiB)`；reader 消费后关闭 response 并释放连接，lister 递归列举，probe 使用 `stat_object`。
+
 ```python
 from io import BytesIO
 
@@ -185,7 +189,7 @@ client = init_client(
     access_key_id="ak",
     secret_access_key="sk",
     region_name="us-east-1",
-    addressing_style="virtual",  # 可选: "virtual" | "path"
+    addressing_style="path",  # 默认 "virtual"，也可设为 "path"
 )()
 
 write = bind_s3_writer(client, bucket="my-bucket")

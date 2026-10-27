@@ -17,6 +17,7 @@ class FakeBody:
         self._stream = BytesIO(data)
         self._fail_on_read = fail_on_read
         self.closed = False
+        self.released = False
 
     def read(self, amt: int | None = None) -> bytes:
         if self._fail_on_read is not None:
@@ -27,6 +28,9 @@ class FakeBody:
 
     def close(self) -> None:
         self.closed = True
+
+    def release_conn(self) -> None:
+        self.released = True
 
 
 class FakeS3Client:
@@ -39,14 +43,16 @@ class FakeS3Client:
         self.get_error = get_error
         self.get_object_kwargs: dict | None = None
         self.uploaded: tuple[str, str, bytes] | None = None
+        self.put_args: tuple | None = None
 
-    def get_object(self, **kwargs):
-        self.get_object_kwargs = kwargs
+    def get_object(self, bucket: str, key: str):
+        self.get_object_kwargs = {"Bucket": bucket, "Key": key}
         if self.get_error is not None:
             raise self.get_error
-        return {"Body": self.body}
+        return self.body
 
-    def upload_fileobj(self, body, bucket: str, key: str) -> None:
+    def put_object(self, bucket, key, body, length, part_size):
+        self.put_args = (bucket, key, length, part_size)
         self.uploaded = (bucket, key, body.read())
 
 
@@ -178,6 +184,7 @@ def test_bind_s3_reader_consumes_and_closes_body():
 
     assert unwrap(result) == b"source-data"
     assert body.closed
+    assert body.released
     assert client.get_object_kwargs == {"Bucket": "bucket-a", "Key": "path.txt"}
 
 
@@ -203,6 +210,7 @@ def test_bind_s3_reader_wraps_body_read_error_and_closes_body():
     assert isinstance(result, Failure)
     assert "network failed" in str(result.error)
     assert body.closed
+    assert body.released
 
 
 def test_bind_s3_reader_wraps_consumer_error_and_closes_body():
@@ -219,22 +227,25 @@ def test_bind_s3_reader_wraps_consumer_error_and_closes_body():
     assert isinstance(result, Failure)
     assert "consume failed" in str(result.error)
     assert body.closed
+    assert body.released
 
 
-def test_bind_s3_writer_uploads_fileobj():
+def test_bind_s3_writer_uploads_unknown_length_stream():
     client = FakeS3Client()
     write = bind_s3_writer(client, "bucket-a")
 
     unwrap(write("path.txt", BytesIO(b"payload")))
 
     assert client.uploaded == ("bucket-a", "path.txt", b"payload")
+    assert client.put_args == ("bucket-a", "path.txt", -1, 10 * 1024 * 1024)
 
 
 def test_bind_s3_writer_wraps_body_read_error():
+
     client = FakeS3Client()
     write = bind_s3_writer(client, "bucket-a")
 
-    result = write("path.txt", BrokenFile())
+    result = write("path.txt", BrokenFile())  # type: ignore[arg-type]
 
     assert is_failure(result)
     assert isinstance(result, Failure)
@@ -316,15 +327,16 @@ def test_bind_source_reader_consumes_stream():
     original_build_reader_for = s3_source_module.build_reader_for
     called: dict[str, str] = {}
 
-    def fake_build_reader_for(_source_cfg):
+    def fake_build_reader_for(_source_cfg: dict):
         def fake_reader(key, consume):
+
             called["key"] = key
             return Success(consume(BytesIO(b"source-data")))
 
         return fake_reader
 
     try:
-        s3_source_module.build_reader_for = fake_build_reader_for
+        s3_source_module.build_reader_for = fake_build_reader_for  # type: ignore[assignment]
         read = bind_source_reader(
             {
                 "known": {
@@ -358,7 +370,7 @@ if __name__ == "__main__":
     test_bind_s3_reader_wraps_get_object_error()
     test_bind_s3_reader_wraps_body_read_error_and_closes_body()
     test_bind_s3_reader_wraps_consumer_error_and_closes_body()
-    test_bind_s3_writer_uploads_fileobj()
+    test_bind_s3_writer_uploads_unknown_length_stream()
     test_bind_s3_writer_wraps_body_read_error()
     test_build_reader_for_path_addressing_style()
     test_build_reader_for_virtual_addressing_style()

@@ -2,8 +2,6 @@
 S3 多源协议：通过 blob://桶id/key 统一访问多个 S3 源
 """
 
-from __future__ import annotations
-
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TypeVar, cast

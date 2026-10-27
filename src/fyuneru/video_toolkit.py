@@ -12,8 +12,6 @@
 - 帧抽取靠"固定输出 timebase + 自算 pts"，而不是指望编码器自己降帧率。
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from fractions import Fraction
 from pathlib import Path

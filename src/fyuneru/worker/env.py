@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from typing import Any
 
 from fyuneru import redis_toolkit, s3_source, s3_toolkit

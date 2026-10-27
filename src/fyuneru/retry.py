@@ -9,8 +9,6 @@
 - 退避带抖动，避免多 worker 同时撞同一个上游配额窗口。
 """
 
-from __future__ import annotations
-
 from collections.abc import Callable
 from dataclasses import dataclass
 from random import uniform

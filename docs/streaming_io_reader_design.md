@@ -1,5 +1,7 @@
 # 流式对象读取 API 设计备忘
 
+> 历史设计文档：保留当时方案与讨论，不作为当前 API 说明；部分示例采用 boto3/botocore，当前 `s3_toolkit` 已改用 MinIO Python SDK。现行契约见 `docs/reference/21_s3_toolkit.md`。
+
 ## 背景
 
 在 `pipeline-ant-video-multitrack` 的 supplier 解压 worker 中，当前链路需要从 `blob://...` 源对象读取压缩包，解压后再把产物上传到目标 S3。原始实现把源压缩包和解压产物都读成 `bytes`，大文件场景会带来明显内存风险。

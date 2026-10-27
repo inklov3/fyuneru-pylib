@@ -71,8 +71,6 @@ s3_sources:
 ## cli.py 模式
 
 ```python
-from __future__ import annotations
-
 import argparse
 from pathlib import Path
 
@@ -110,8 +108,6 @@ def setup_pipeline_env(label: str, args: argparse.Namespace) -> WorkerEnv:
 ## contracts.py 模式
 
 ```python
-from __future__ import annotations
-
 from dataclasses import dataclass
 
 
@@ -134,8 +130,6 @@ class NextTask:
 ## registry.py 模式
 
 ```python
-from __future__ import annotations
-
 from dataclasses import dataclass
 
 from fyuneru.task_queue import RegisteredActor, TaskQueueBroker, actor, build_broker
@@ -208,8 +202,6 @@ def queue_for_node(node: str) -> str:
 ## node 模式
 
 ```python
-from __future__ import annotations
-
 from fyuneru.result import unwrap
 from fyuneru.worker import WorkerEnv
 from loguru import logger
@@ -257,8 +249,6 @@ def run_first(task: InputTask, env: WorkerEnv) -> NextTask:
 统一使用 `worker/main.py`，通过 `--node <node>` 选择消费哪个 queue。不要为每个节点新增一个 worker 文件。
 
 ```python
-from __future__ import annotations
-
 from loguru import logger
 
 from pipeline.cli import parse_common_args, setup_pipeline_env

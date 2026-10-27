@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from io import BytesIO
 
 import fyuneru.worker.env as worker_env_module

@@ -1,126 +1,164 @@
-"""测试 s3_toolkit 新增的预签名与对象探测绑定。"""
+"""测试 s3_toolkit 的 MinIO 绑定。"""
 
-from botocore.exceptions import ClientError
+from datetime import timedelta
+from types import SimpleNamespace
+from urllib.parse import urlsplit
+
+from urllib3.response import HTTPResponse
 
 from fyuneru.result import Failure, is_failure, is_success, unwrap
-from fyuneru.s3_toolkit import bind_s3_presigner, bind_s3_probe
+from fyuneru.s3_toolkit import (
+    S3Error,
+    bind_s3_lister,
+    bind_s3_presigner,
+    bind_s3_probe,
+    init_client,
+)
 
 
 class FakeS3Client:
     def __init__(
-        self,
-        head_response: dict | None = None,
-        head_error: Exception | None = None,
-        presign_error: Exception | None = None,
+        self, stat_response=None, stat_error=None, presign_error=None, objects=()
     ):
-        self.head_response = head_response
-        self.head_error = head_error
+        self.stat_response = stat_response
+        self.stat_error = stat_error
         self.presign_error = presign_error
-        self.presign_kwargs: dict | None = None
-        self.head_kwargs: dict | None = None
+        self.objects = objects
+        self.presign_args = None
+        self.stat_args = None
+        self.list_args = None
 
-    def generate_presigned_url(self, **kwargs) -> str:
-        self.presign_kwargs = kwargs
+    def presigned_get_object(self, bucket, key, expires):
+        self.presign_args = (bucket, key, expires)
         if self.presign_error is not None:
             raise self.presign_error
-        params = kwargs["Params"]
-        return (
-            f"https://s3.example.com/{params['Bucket']}/{params['Key']}"
-            f"?X-Amz-Expires={kwargs['ExpiresIn']}"
+        return f"https://s3.example.com/{bucket}/{key}"
+
+    def stat_object(self, bucket, key):
+        self.stat_args = (bucket, key)
+        if self.stat_error is not None:
+            raise self.stat_error
+        return self.stat_response
+
+    def list_objects(self, bucket, prefix, recursive):
+        self.list_args = (bucket, prefix, recursive)
+        return iter(self.objects)
+
+
+def _s3_error(code: str) -> S3Error:
+    return S3Error(HTTPResponse(), code, "boom", "resource", "request", "host")
+
+
+def test_real_client_addressing_and_endpoint_validation() -> None:
+    for style, expected_host, expected_path in (
+        ("path", "example.com:9000", "/test-bucket/key"),
+        ("virtual", "test-bucket.example.com:9000", "/key"),
+    ):
+        client = init_client(
+            "http://example.com:9000",
+            "access",
+            "secret",
+            region_name="us-east-1",
+            addressing_style=style,
+        )()
+        url = urlsplit(unwrap(bind_s3_presigner(client, "test-bucket")("key")))
+        assert (url.scheme, url.netloc, url.path) == (
+            "http",
+            expected_host,
+            expected_path,
         )
-
-    def head_object(self, **kwargs) -> dict:
-        self.head_kwargs = kwargs
-        if self.head_error is not None:
-            raise self.head_error
-        assert self.head_response is not None
-        return self.head_response
-
-
-def _client_error(status: int, code: str) -> ClientError:
-    return ClientError(
-        {
-            "Error": {"Code": code, "Message": "boom"},
-            "ResponseMetadata": {"HTTPStatusCode": status},
-        },
-        "HeadObject",
-    )
+    for endpoint in (
+        "ftp://example.com",
+        "https://example.com/path",
+        "https://u:p@example.com",
+    ):
+        try:
+            init_client(endpoint, "access", "secret")
+        except ValueError:
+            continue
+        raise AssertionError(f"不应接受 endpoint: {endpoint}")
 
 
 def test_presign_builds_get_url() -> None:
     client = FakeS3Client()
-    presign = bind_s3_presigner(client, "my-bucket")  # type: ignore[arg-type]
-    result = presign("prepared/a.mp4", expires_seconds=900)
+    result = bind_s3_presigner(client, "my-bucket")("prepared/a.mp4", 900)  # type: ignore[arg-type]
     assert is_success(result)
-    assert unwrap(result).endswith("X-Amz-Expires=900")
-    assert client.presign_kwargs is not None
-    assert client.presign_kwargs["ClientMethod"] == "get_object"
-    assert client.presign_kwargs["Params"] == {
-        "Bucket": "my-bucket",
-        "Key": "prepared/a.mp4",
-    }
+    assert unwrap(result).endswith("a.mp4")
+    assert client.presign_args == (
+        "my-bucket",
+        "prepared/a.mp4",
+        timedelta(seconds=900),
+    )
 
 
 def test_presign_rejects_non_positive_expiry() -> None:
-    presign = bind_s3_presigner(FakeS3Client(), "b")  # type: ignore[arg-type]
-    result = presign("k", expires_seconds=0)
-    assert is_failure(result), "非正有效期必须返回 Failure"
+    result = bind_s3_presigner(FakeS3Client(), "b")("k", 0)  # type: ignore[arg-type]
+    assert is_failure(result)
 
 
 def test_presign_propagates_client_failure() -> None:
-    client = FakeS3Client(presign_error=RuntimeError("signer down"))
-    presign = bind_s3_presigner(client, "b")  # type: ignore[arg-type]
-    assert is_failure(presign("k"))
+    result = bind_s3_presigner(
+        FakeS3Client(presign_error=RuntimeError("signer down")), "b"  # type: ignore[arg-type]
+    )("k")
+    assert is_failure(result)
 
 
 def test_probe_returns_stat_for_existing_object() -> None:
     client = FakeS3Client(
-        head_response={
-            "ContentLength": 1234,
-            "ETag": '"abc123"',
-            "ContentType": "video/mp4",
-        }
+        stat_response=SimpleNamespace(
+            size=1234, etag='"abc123"', content_type="video/mp4"
+        )
     )
-    probe = bind_s3_probe(client, "my-bucket")  # type: ignore[arg-type]
-    result = probe("prepared/a.mp4")
+    result = bind_s3_probe(client, "my-bucket")("prepared/a.mp4")  # type: ignore[arg-type]
     assert is_success(result)
     stat = unwrap(result)
     assert stat is not None
-    assert stat.size_bytes == 1234
-    assert stat.etag == "abc123", "ETag 引号必须剥掉"
-    assert stat.content_type == "video/mp4"
+    assert (stat.key, stat.size_bytes, stat.etag, stat.content_type) == (
+        "prepared/a.mp4",
+        1234,
+        "abc123",
+        "video/mp4",
+    )
+    assert client.stat_args == ("my-bucket", "prepared/a.mp4")
 
 
 def test_probe_maps_missing_object_to_none() -> None:
-    for error in (
-        _client_error(404, "404"),
-        _client_error(404, "NoSuchKey"),
-        _client_error(403, "NotFound"),
-    ):
-        probe = bind_s3_probe(FakeS3Client(head_error=error), "b")  # type: ignore[arg-type]
-        result = probe("k")
-        assert is_success(result), f"缺失对象不应是错误: {error}"
+    for code in ("NoSuchKey", "NoSuchObject", "NotFound"):
+        result = bind_s3_probe(FakeS3Client(stat_error=_s3_error(code)), "b")("k")  # type: ignore[arg-type]
+        assert is_success(result), f"缺失对象不应是错误: {code}"
         assert unwrap(result) is None
 
 
 def test_probe_propagates_other_client_errors() -> None:
-    probe = bind_s3_probe(
-        FakeS3Client(head_error=_client_error(403, "AccessDenied")),  # type: ignore[arg-type]
-        "b",
-    )
-    result = probe("k")
-    assert is_failure(result), "鉴权失败不得被当成对象不存在"
+    result = bind_s3_probe(FakeS3Client(stat_error=_s3_error("AccessDenied")), "b")("k")  # type: ignore[arg-type]
+    assert is_failure(result)
     assert isinstance(result, Failure)
-    assert isinstance(result.error, ClientError)
+    assert isinstance(result.error, S3Error)
+
+
+def test_lister_recursively_filters_suffix_and_directories() -> None:
+    objects = [
+        SimpleNamespace(object_name="prefix/a.mp4"),
+        SimpleNamespace(object_name="prefix/b.txt"),
+        SimpleNamespace(object_name="prefix/folder/"),
+        SimpleNamespace(object_name=None),
+        SimpleNamespace(object_name="other/c.mp4"),
+    ]
+    client = FakeS3Client(objects=objects)
+    result = bind_s3_lister(client, "b")("prefix/", suffix=".mp4")  # type: ignore[arg-type]
+    assert unwrap(result) == ["prefix/a.mp4"]
+    assert client.list_args == ("b", "prefix/", True)
 
 
 def main() -> None:
+    test_real_client_addressing_and_endpoint_validation()
     test_presign_builds_get_url()
     test_presign_rejects_non_positive_expiry()
     test_presign_propagates_client_failure()
     test_probe_returns_stat_for_existing_object()
     test_probe_maps_missing_object_to_none()
     test_probe_propagates_other_client_errors()
+    test_lister_recursively_filters_suffix_and_directories()
     print("test_s3_toolkit: 全部通过")
 
 

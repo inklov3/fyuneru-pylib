@@ -224,14 +224,13 @@ init_client(
     access_key_id: str,
     secret_access_key: str,
     region_name: str | None = None,
-    config: Config | None = None,    # botocore.config.Config
     addressing_style: str = "virtual",
-) -> Callable[[], S3Client]
-# Default config: signature_version="s3v4".
-# addressing_style supports "virtual" or "path".
+) -> Callable[[], Minio]
+# 返回惰性 MinIO Python SDK 客户端工厂；endpoint 可带 http(s) scheme 与端口，不可含路径/query/fragment。
+# addressing_style: "virtual"（默认）| "path"。
 
-init_client_from_config(config: dict) -> Callable[[], S3Client]
-# Reads config["s3"]. Returns Callable[[], S3Client].
+init_client_from_config(config: dict) -> Callable[[], Minio]
+# Reads config["s3"]. Returns Callable[[], Minio].
 # Raises KeyError if "s3" section missing.
 # 与 init_workspace_from_config 的差别：client 层不需要 bucket，因此本函数不会
 # 校验 s3.bucket；只在调用 init_workspace_from_config 时才强制要求 bucket。
@@ -241,36 +240,32 @@ init_workspace_from_config(config: dict) -> Callable
 # Returns Callable[[], tuple[ObjectStorageWriter, ObjectStorageReader, ObjectStorageDeleter]].
 # 必须含 s3.bucket，缺失立刻抛 KeyError。
 
-bind_s3_writer(client: S3Client, bucket: str) -> ObjectStorageWriter
-# writer(key: str, body: BinaryIO) -> ResultE[None]  — upload_fileobj
+bind_s3_writer(client: Minio, bucket: str) -> ObjectStorageWriter
+# writer(key: str, body: BinaryIO) -> ResultE[None]  — MinIO put_object(length=-1, part_size=10 MiB)
 
-bind_s3_reader(client: S3Client, bucket: str) -> ObjectStorageReader
+bind_s3_reader(client: Minio, bucket: str) -> ObjectStorageReader
 # reader(key: str, consume: Callable[[ReadableBinaryStream], T]) -> ResultE[T]
 # get_object、consume(body)、body.close() 都在 @safe 边界内执行。
 # consume 必须同步消费流，不要保存或返回 body 给外部继续读取。
 
-bind_s3_deleter(client: S3Client, bucket: str) -> ObjectStorageDeleter
+bind_s3_deleter(client: Minio, bucket: str) -> ObjectStorageDeleter
 # deleter(key: str) -> ResultE[None]               — delete_object
 
-bind_s3_lister(client: S3Client, bucket: str) -> ObjectStorageLister
+bind_s3_lister(client: Minio, bucket: str) -> ObjectStorageLister
 # lister(prefix: str, suffix: str | None = None) -> ResultE[list[str]]
-# Auto-paginates via list_objects_v2 + ContinuationToken.
-# 若服务端返回 IsTruncated=True 但缺 NextContinuationToken，会抛 RuntimeError 并附带 prefix，
-# 防止陷入死循环。
-# Filters out directory placeholders (keys ending with "/").
-# Optional suffix filter applied client-side.
+# 使用 MinIO list_objects(bucket, prefix=..., recursive=True) 递归列举并处理分页。
+# 过滤目录占位符（key 以 "/" 结尾）；可选 suffix 在客户端过滤。
 
-bind_s3_presigner(client: S3Client, bucket: str) -> ObjectStoragePresigner
+bind_s3_presigner(client: Minio, bucket: str) -> ObjectStoragePresigner
 # presign(key: str, expires_seconds: int = 3600) -> ResultE[str]
 # Generates a get_object presigned URL. expires_seconds must be positive.
 # Hands an object to external services that cannot hold credentials
 # (e.g. a multimodal model fetching the video itself).
 # Expiry must cover the full downstream window (queueing + fetch).
 
-bind_s3_probe(client: S3Client, bucket: str) -> ObjectStorageProbe
+bind_s3_probe(client: Minio, bucket: str) -> ObjectStorageProbe
 # probe(key: str) -> ResultE[ObjectStat | None]
-# head_object. A missing object is Success(None), not Failure — only real
-# errors (auth, network) surface as Failure. Callers must distinguish.
+# 使用 stat_object；NoSuchKey / NoSuchObject / NotFound 返回 Success(None)，其它错误保持 Failure。
 
 @dataclass(frozen=True)
 class ObjectStat:

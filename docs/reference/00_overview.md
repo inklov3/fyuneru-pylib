@@ -49,7 +49,9 @@ uv add "fyuneru[redis,s3] @ git+https://github.com/inklov3/fyuneru-pylib.git"
 | `30_task_queue.md` | `fyuneru.task_queue` | `[pipeline]` |
 | `32_worker_env.md` | `fyuneru.worker` | 按启用资源 |
 
-## 配置 YAML 全貌（参考）
+### S3 SDK 行为
+
+`fyuneru.s3_toolkit` 使用 MinIO Python SDK 的 `Minio` 客户端，不接受 boto3/botocore 的 Config。endpoint 可带 `http(s)://` 与端口，不可带路径、query 或 fragment；未写 scheme 时按 HTTPS 处理。`addressing_style` 默认为 `virtual`，也可选 `path`。对象读写和列表等具体行为见 [`21_s3_toolkit.md`](21_s3_toolkit.md)。
 
 ```yaml
 redis:
@@ -65,7 +67,7 @@ s3:
   secret_access_key: xxx
   region_name: us-east-1     # optional
   bucket: my-bucket          # init_workspace_from_config 必需
-  addressing_style: virtual  # optional: virtual | path
+  addressing_style: path  # optional: path (default) | virtual
 
 
 llm:

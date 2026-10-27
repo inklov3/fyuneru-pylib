@@ -8,8 +8,6 @@
   等逻辑都收敛在一处，worker 主循环只剩"分发 + 错误边界"。
 """
 
-from __future__ import annotations
-
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, Protocol

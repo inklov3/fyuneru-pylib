@@ -24,13 +24,12 @@ init_client(
     access_key_id: str,
     secret_access_key: str,
     region_name: str | None = None,
-    config: Config | None = None,     # botocore.config.Config
     addressing_style: str = "virtual",
-) -> Callable[[], S3Client]
-# 默认 config: signature_version="s3v4"
-# addressing_style: "virtual" | "path"
+) -> Callable[[], Minio]
+# 返回惰性 MinIO Python SDK 客户端工厂；endpoint 可带 http(s) scheme 和端口，不可带路径/query/fragment。
+# addressing_style: "virtual"（默认）| "path"。
 
-init_client_from_config(config: dict) -> Callable[[], S3Client]
+init_client_from_config(config: dict) -> Callable[[], Minio]
 # 读 config["s3"]，不强制要 bucket。
 # 缺 "s3" 段抛 KeyError。
 
@@ -42,22 +41,20 @@ init_workspace_from_config(config: dict) -> Callable
 ## bind_* 操作
 
 ```python
-bind_s3_writer(client, bucket: str) -> ObjectStorageWriter
-# writer(key: str, body: BinaryIO) -> ResultE[None] — upload_fileobj
+bind_s3_writer(client: Minio, bucket: str) -> ObjectStorageWriter
+# writer(key: str, body: BinaryIO) -> ResultE[None] — MinIO put_object(length=-1, part_size=10 MiB)
 
-bind_s3_reader(client, bucket: str) -> ObjectStorageReader
+bind_s3_reader(client: Minio, bucket: str) -> ObjectStorageReader
 # reader(key: str, consume: Callable[[ReadableBinaryStream], T]) -> ResultE[T]
 # get_object、consume(body)、body.close() 都在 @safe 边界内执行。
 # consume 必须同步消费流，不要保存或返回 body 给外部继续读取。
 
 bind_s3_deleter(client, bucket: str) -> ObjectStorageDeleter
-# deleter(key: str) -> ResultE[None]               — delete_object
+# deleter(key: str) -> ResultE[None]               — remove_object
 
 bind_s3_lister(client, bucket: str) -> ObjectStorageLister
 # lister(prefix: str, suffix: str | None = None) -> ResultE[list[str]]
-# 自动用 list_objects_v2 + ContinuationToken 分页。
-# 服务端返回 IsTruncated=True 但缺 NextContinuationToken 时抛 RuntimeError
-# 并带 prefix，防止死循环。
+# 使用 MinIO list_objects(bucket, prefix=..., recursive=True) 处理递归列举与分页。
 # 过滤掉目录占位符（key 以 "/" 结尾）。
 # 可选 suffix 在客户端侧过滤。
 
@@ -68,7 +65,7 @@ bind_s3_presigner(client, bucket: str) -> ObjectStoragePresigner
 
 bind_s3_probe(client, bucket: str) -> ObjectStorageProbe
 # probe(key: str) -> ResultE[ObjectStat | None]
-# head_object；对象不存在返回 Success(None)，而不是 Failure。
+# 使用 stat_object；NoSuchKey / NoSuchObject / NotFound 返回 Success(None)，而不是 Failure。
 # 鉴权失败、网络错误等仍然返回 Failure，不会被当成“不存在”。
 ```
 
@@ -137,8 +134,8 @@ source = VideoSource(uri=url)
 ## 关键约束
 
 - `init_client_from_config` 与 `init_workspace_from_config` 的区别：前者不校验 bucket，后者强制
-- `bind_s3_reader` 不返回裸流；读取、写本地文件、解码等操作应放在 `consume` 内同步完成
-- `bind_s3_writer` 只接受文件类对象；小对象可用 `io.BytesIO` 包装
+- `bind_s3_reader` 在消费结束后调用响应的 `close()` 与 `release_conn()`，确保连接资源释放
+- `bind_s3_writer` 接收二进制文件流；MinIO SDK 以 `length=-1`、`part_size=10 MiB` 调用 `put_object`，流长度未知时可分段上传；小对象可用 `io.BytesIO` 包装
 - `bind_s3_probe` 把"对象不存在"当正常结果（`Success(None)`），只有真正的错误才是 `Failure`；调用方必须区分两者
 - 预签名 URL 的有效期需覆盖下游消费的完整窗口（排队 + 拉取），过短会在高负载下随机失败
 - 预签名 URL 包含签名，不得当作稳定身份标识持久化或归档

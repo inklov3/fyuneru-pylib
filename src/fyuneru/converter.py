@@ -1,7 +1,5 @@
 """数据转化器"""
 
-from __future__ import annotations
-
 from base64 import b64encode
 from datetime import date, datetime, time
 from decimal import Decimal

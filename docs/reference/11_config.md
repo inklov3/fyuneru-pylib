@@ -27,7 +27,7 @@ read_config_with_override(base: Path, override: Path | None = None) -> dict[str,
 parse_redis_config(config: dict[str, Any]) -> RedisConfig
 parse_s3_config(config: dict[str, Any]) -> S3Config
 # 强类型解析，显式字段校验，错误带 path 信息。
-# parse_s3_config 支持可选 addressing_style: "virtual" | "path"。
+# parse_s3_config 支持可选 addressing_style: "path" | "virtual"；默认 "virtual"。
 ```
 
 ## 关键约束
