@@ -1,4 +1,4 @@
-# fyuneru — API Reference for Claude Code
+# fyuneru — API Reference
 
 Python utility library wrapping common infrastructure components with unified, composable functional interfaces. Uses `fyuneru.result` for explicit error handling and lazy client initialization.
 

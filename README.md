@@ -88,7 +88,7 @@ for item in tqdm_loguru(items, desc="Processing"):
 
 ### YAML 配置与按配置初始化
 
-`read_config` / `read_config_with_override` 按 YAML 语义读取配置内容（当前不强制文件后缀）。完整配置结构见 [`example.yml`](example.yml)。
+`read_config` / `read_config_with_override` 按 YAML 语义读取配置内容（当前不强制文件后缀）。完整配置结构见 [`example.yml`](example.yml)；使用时复制并替换占位值，删除不需要的配置段。
 
 ```python
 from pathlib import Path

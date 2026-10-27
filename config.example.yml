@@ -1,8 +1,0 @@
-s3:
-  endpoint: ""
-  access_key_id: ""
-  secret_access_key: ""
-  region_name: ""
-  bucket: ""
-  # 可选：virtual（默认）或 path；按 TOS 实际兼容方式调整。
-  addressing_style: virtual

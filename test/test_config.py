@@ -168,10 +168,19 @@ def test_parse_s3_config_rejects_invalid_addressing_style() -> None:
         assert "addressing_style" in str(error)
 
 
+def test_example_config() -> None:
+    config = read_config(Path(__file__).resolve().parent.parent / "example.yml")
+    assert parse_redis_config(config).port == 6379
+    assert parse_s3_config(config).addressing_style == "virtual"
+    assert config["llm"]["provider"] == "gemini"
+    assert all(source["source_id"] for source in config["s3_sources"])
+
+
 if __name__ == "__main__":
     test_read_config_with_override_merge_rules()
     test_read_config_with_override_none_equals_read_config()
     test_parse_redis_config_success()
     test_parse_s3_config_success()
     test_parse_s3_config_rejects_invalid_addressing_style()
+    test_example_config()
     print("所有 config 覆盖测试通过")

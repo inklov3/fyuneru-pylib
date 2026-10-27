@@ -1,5 +1,7 @@
 # fyuneru-pylib 修复与优化计划
 
+> 历史设计记录，部分方案与命令已过时；当前实现、API 和验证流程以源码、`AGENTS.md` 与 `pre_release.sh` 为准。
+
 ## Context
 
 `~/Project/jump-cut/docs/fyuneru_audit.md` 对 fyuneru 0.1.0 做了一次只读审计，列出确认的 bug、设计问题与运维风险。目前 jump-cut 必须在导入 broker 前打 `_fyuneru_patch.py` 才能跑通 worker，否则 redis-py ≥5 下消息被静默吞掉；同时 worker 主循环一条坏消息会让整个进程退出，重试无 backoff，xq 流无回收，可观测性几乎为零。
@@ -196,10 +198,10 @@ R-1 合并并发 0.2 后，jump-cut 一次性升级：删除 `_fyuneru_patch.py`
 
 ## 验证
 
-1. **R-1**：`pytest test/test_task_queue.py` 全套通过；新增测试覆盖 xreadgroup 返回 list / tuple、坏 JSON、缺字段、未注册 actor 各场景；jump-cut 装本仓库后**不打补丁**也能消费消息。
+1. **R-1**：`uv run python test/test_task_queue.py` 全套通过；新增测试覆盖 xreadgroup 返回 list / tuple、坏 JSON、缺字段、未注册 actor 各场景；jump-cut 装本仓库后**不打补丁**也能消费消息。
 2. **R-2**：构造 actor 抛 RuntimeError、未注册 actor、`broker.xq` 自身抛错三个场景，跑 `run_worker_once_for_test`，断言进程不退出且消息状态符合预期。
 3. **R-3**：mock `read_entries` 抛 `ConnectionError`，断言 worker sleep 后继续；`should_stop=lambda: True` 时主循环立刻返回。
-4. **R-4**：actor 始终抛错、`max_retries=3`、`retry_backoff_ms_base=10`，多轮跑断言 `eta` 字段指数递增、attempt=3 后进 xq。
+4. **R-4**：已废弃；队列不再支持 attempt、eta 或内置重试。
 5. **R-5**：拆分后所有顶层函数有单元测试；`bind_source_reader` 行为不变（回归用例）。
 6. **R-6**：grep 全仓 + jump-cut 仓库确认无 `bytes_to_object` / `object_to_bytes` 残留调用。
 7. **R-7**：用 `bind_s3_reader` 的 `consume` 按块读 100MB 对象，监控进程 RSS 不超过 chunk_size × 2。

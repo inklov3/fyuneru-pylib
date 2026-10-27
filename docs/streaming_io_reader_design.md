@@ -201,7 +201,7 @@ with file_path.open("rb") as output_file:
 deploy/supplier-unpack-worker.example.yml
 ```
 
-示例文件只能包含 `<placeholder>`，不得包含真实 endpoint、access key、secret key、token、Mongo URI、Redis 地址或镜像 digest 中的私有敏感信息。
+示例文件只能包含 `<placeholder>`，不得包含真实 endpoint、access key、secret key、token、数据库 URI、Redis 地址或镜像 digest 中的私有敏感信息。
 
 ## 建议改动清单
 

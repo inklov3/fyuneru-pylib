@@ -6,10 +6,10 @@
 
 `task_queue` 的目标是提供一个轻量、可组合、可观测的 Redis Streams 任务队列能力：
 
-- API 体验参考 Dramatiq（Actor + send + worker）
+- Actor 风格 API（Actor + send + worker）
 - 保持 `fyuneru` 一致的函数式风格（`build_*`、显式错误）
 - 默认语义清晰：**至少一次消费**
-- 关键状态迁移用 Lua 保证原子性（重试/死信 + ACK）
+- 关键状态迁移用 Lua 保证原子性（死信 + ACK）
 - payload 使用 dataclass envelope，兼顾传输可读性与程序类型一致性
 - 解析异常默认 strict：直接暴露错误，不静默吞掉
 
@@ -150,15 +150,3 @@ XQ entry 字段：`original_id`, `queue`, `payload`, `error`, `traceback`, `fail
 - 不自动吞异常，不自动伪造补偿行为
 
 这有助于尽早暴露框架或上游数据问题。
-
-## 10. 与 Dramatiq 思路的关系
-
-借鉴点：
-
-- Actor 风格 API
-- Redis Lua 脚本保障关键状态迁移原子性
-
-差异点：
-
-- 本实现采用“最小 Lua 脚本集”而非单一大状态机脚本
-- 优先维持可读性、可调试性和本库函数式风格一致性

@@ -1,3 +1,4 @@
+# 示例值仅供参考；使用前按需删除不需要的配置段并替换占位值。
 redis:
   host: localhost
   port: 6379
@@ -11,14 +12,13 @@ s3:
   secret_access_key: xxx
   region_name: us-east-1  # 可选
   bucket: my-workspace-bucket  # init_workspace_from_config 必选
-
+  addressing_style: virtual  # 可选：virtual（默认）或 path，按 S3 兼容服务调整
 
 llm:
   provider: gemini  # 标识使用哪个 provider
   api_key: xxx
   endpoint: https://api.example.com
   api_version: v1beta  # 可选
-
 
 s3_sources:
 - source_id: my-images

@@ -5,7 +5,7 @@
 - 只用 `uv`，不要用 pip/poetry。
 - 这是 `src/` 布局的**库项目**，源码在 `src/fyuneru/`，不是应用入口仓库。
 - 顶层 `src/fyuneru/__init__.py` 为空；默认从子模块导入。
-- 测试是脚本执行（`uv run python test/*.py`），不是 pytest 工作流。
+- 测试是逐个执行的脚本（例如 `uv run python test/test_config.py`），不是 pytest 工作流；完整校验使用 `./pre_release.sh`。
 
 ## 安装与依赖边界
 
