@@ -65,7 +65,7 @@ uv add "fyuneru[redis,s3] @ git+https://github.com/inklov3/fyuneru-pylib.git"
 
 ## 文档
 
-- [完整 API 指南](src/fyuneru/GUIDE.md)
+- [完整 API 指南](docs/api_reference.md)
 - [通用模块参考与索引](docs/reference/00_overview.md)：按需阅读各模块参考，适用于所有开发者和 agent。
 - [下游 pipeline 项目参考](docs/reference/40_pipeline_project.md)
 - [仓库开发约定](AGENTS.md)

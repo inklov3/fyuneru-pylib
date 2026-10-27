@@ -131,7 +131,7 @@ eta 延迟调度与 attempt/retry 自维护重试已在 2026-05-26 版本彻底�
 
 ### F-2 GUIDE.md 钉死 at-least-once + 幂等要求
 
-`src/fyuneru/GUIDE.md` task_queue 段新增"语义保证"小节：fyuneru task_queue 是 at-least-once，handler 在异常 / Redis 故障 / Lua 降级三种情况下可能被重复执行。推荐用 `redis_toolkit.calculate_checkpoint_key` + `bind_redis_set_reader/writer` 做 per-payload-key 幂等检查（jump-cut 现成的 `is_past_checkpoint` / `advance_checkpoint` 就是这种模式）。
+`docs/api_reference.md` task_queue 段新增"语义保证"小节：fyuneru task_queue 是 at-least-once，handler 在异常 / Redis 故障 / Lua 降级三种情况下可能被重复执行。推荐用 `redis_toolkit.calculate_checkpoint_key` + `bind_redis_set_reader/writer` 做 per-payload-key 幂等检查（jump-cut 现成的 `is_past_checkpoint` / `advance_checkpoint` 就是这种模式）。
 
 ### F-3 ~~`attempt` 字段语义文档化~~ (**已废弃**：attempt 字段已随 retry/eta 机制一并移除)
 
@@ -191,7 +191,7 @@ R-1 合并并发 0.2 后，jump-cut 一次性升级：删除 `_fyuneru_patch.py`
 - `src/fyuneru/s3_source.py` — R-5
 - `src/fyuneru/converter.py` — R-6, O-4
 - `src/fyuneru/logger.py` — F-4（仅文档）
-- `src/fyuneru/GUIDE.md` — R-6, R-7, F-2, F-3, F-4, F-5
+- `docs/api_reference.md` — R-6, R-7, F-2, F-3, F-4, F-5
 - `test/test_task_queue.py` — R-1, R-2, R-3, R-4, O-2 全面扩测
 
 ---

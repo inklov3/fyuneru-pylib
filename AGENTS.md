@@ -63,7 +63,7 @@
 ## 通用 API 参考
 
 - 使用或修改本库时先阅读 `docs/reference/00_overview.md` 和 `docs/reference/01_result.md`，再按概览索引读取相关模块参考；以源码和测试为准。
-- 下游 pipeline 项目可参考 `docs/reference/40_pipeline_project.md`；完整 API 指南见 `src/fyuneru/GUIDE.md`。
+- 下游 pipeline 项目可参考 `docs/reference/40_pipeline_project.md`；完整 API 指南见 `docs/api_reference.md`。
 - 修改 API 时同步更新对应参考文档和指南；这些普通 Markdown 文档不依赖特定 agent 或插件。
 
 ## 仓库约定

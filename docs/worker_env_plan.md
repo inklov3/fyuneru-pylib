@@ -158,7 +158,7 @@ def calculate_checkpoint_key(workspace: str, label: str) -> str: ...
 4. 修改 `src/fyuneru/redis_toolkit.py`
    - checkpoint 计算函数签名改为 `workspace/label`。
 
-5. 修改 `src/fyuneru/GUIDE.md`
+5. 修改 `docs/api_reference.md`
    - 补充 `worker` 包使用说明。
    - 更新 checkpoint 与 result key 语义。
 
