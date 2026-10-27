@@ -85,6 +85,7 @@ def init_client(
         raise ValueError("endpoint 必须是主机地址，可带 scheme 和端口，不可含路径")
     host = parsed.netloc
     secure = parsed.scheme == "https"
+
     def create_client() -> Minio:
         client = Minio(
             host,

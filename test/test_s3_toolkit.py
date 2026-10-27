@@ -98,7 +98,8 @@ def test_presign_rejects_non_positive_expiry() -> None:
 
 def test_presign_propagates_client_failure() -> None:
     result = bind_s3_presigner(
-        FakeS3Client(presign_error=RuntimeError("signer down")), "b"  # type: ignore[arg-type]
+        FakeS3Client(presign_error=RuntimeError("signer down")),  # type: ignore[arg-type]
+        "b",
     )("k")
     assert is_failure(result)
 

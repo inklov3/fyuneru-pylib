@@ -82,9 +82,7 @@ class FakeRedisClient:
             del entries[: len(entries) - maxlen]
         return message_id
 
-    def xgroup_create(
-        self, name: str, groupname: str, id: str, mkstream: bool
-    ) -> None:
+    def xgroup_create(self, name: str, groupname: str, id: str, mkstream: bool) -> None:
         self.groups.add((name, groupname))
         self.stream_entries.setdefault(name, [])
 
@@ -220,7 +218,6 @@ def test_task_queue_failure_goes_to_xq_when_no_retry() -> None:
     assert "name" not in xq_fields
     assert "attempt" not in xq_fields
     assert xq_fields["original_id"] == "1-0"
-
 
 
 # ----------------------------------------------------------------------
@@ -520,7 +517,6 @@ def test_hook_exception_does_not_break_worker() -> None:
     assert processed == 1
 
 
-
 # ----------------------------------------------------------------------
 # Redis 连接错误隔离
 # ----------------------------------------------------------------------
@@ -677,7 +673,6 @@ def test_handler_failure_goes_straight_to_xq() -> None:
     xq_entries = redis_client.stream_entries.get(xq_stream, [])
     assert len(xq_entries) == 1
     assert "直接进 xq" in xq_entries[0][1]["error"]
-
 
 
 def test_idle_message_reclaimed_then_handled() -> None:

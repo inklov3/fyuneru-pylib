@@ -530,7 +530,7 @@ def _normalize_stream_fields(fields: dict[Any, Any]) -> dict[str, str]:
 def _safe_float(value: Any, default: float = 0.0) -> float:
     try:
         return float(value)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return default
 
 
