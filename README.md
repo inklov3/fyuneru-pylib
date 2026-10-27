@@ -424,6 +424,14 @@ uv run python test/test_task_queue.py
 
 当前仓库测试通过脚本执行，不是 pytest 工作流。
 
+使用 Podman 构建包含所有可选依赖的基础镜像：
+
+```bash
+podman build -f Containerfile.base -t fyuneru-base .
+```
+
+构建上下文由 `.containerignore` 控制。
+
 包源码位于 `src/fyuneru/`。
 
 ## 相关文件
@@ -431,7 +439,6 @@ uv run python test/test_task_queue.py
 - 配置示例：[`example.yml`](example.yml)
 - 协议文档：[`docs/s3_source_protocol.md`](docs/s3_source_protocol.md)
 - 任务队列设计：[`docs/task_queue_design.md`](docs/task_queue_design.md)
-- 变更记录：[`CHANGELOG.md`](CHANGELOG.md)
 
 ## License
 

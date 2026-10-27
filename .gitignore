@@ -10,5 +10,6 @@ wheels/
 .venv
 .*
 !.gitignore
+!.containerignore
 uv.lock
 config.yml

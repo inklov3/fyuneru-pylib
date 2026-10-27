@@ -56,7 +56,7 @@
 
 ### R-4 ~~重试加 backoff，让 `eta` 真正生效~~ (**已废弃**：v0.2 移除 retry/eta 机制)
 
-eta 延迟调度与 attempt/retry 自维护重试已在 2026-05-26 版本彻底移除，改为纯"至少一次消费 + 死信流"语义。handler 抛错直接进 XQ，无内置重试。详见 CHANGELOG.md 2026-05-26 条目。
+eta 延迟调度与 attempt/retry 自维护重试已在 2026-05-26 版本彻底移除，改为纯"至少一次消费 + 死信流"语义。handler 抛错直接进 XQ，无内置重试。
 
 ### R-5 `bind_source_reader` 闭包拆分
 
@@ -92,6 +92,7 @@ eta 延迟调度与 attempt/retry 自维护重试已在 2026-05-26 版本彻底�
 
 - **位置**：`broker.py`、`worker.py`，与 R-1 的 `BrokerOps` 一起设计
 - **改法**：`TaskQueueBroker` 接受一组可选 callback（缺省 None，零开销）：
+
   ```python
   on_enqueue:          (queue) -> None
   on_handle_start:     (queue) -> None
@@ -100,6 +101,7 @@ eta 延迟调度与 attempt/retry 自维护重试已在 2026-05-26 版本彻底�
   on_lua_degraded:     (reason: str) -> None
   on_redis_error:      (error) -> None
   ```
+
   worker 在 R-2 的关键节点同步调用；callback 自身抛错被 try/except 吞掉并 warning 一次，**绝不反过来杀 worker**。同时 broker 在 Lua 注册降级时主动 `on_lua_degraded(...)` + `loguru.warning`，解决审计的"静默降级"问题。
 
 ### O-2 xq_stream 加 MAXLEN trim
@@ -144,6 +146,7 @@ eta 延迟调度与 attempt/retry 自维护重试已在 2026-05-26 版本彻底�
 ## jump-cut 侧的兜底（不在本仓库 PR 内）
 
 R-1 / R-2 发版前 jump-cut 已经在用 `_fyuneru_patch.py`，可以再在 worker 入口套一层 supervisor：
+
 ```python
 while True:
     result = broker.run_worker(...)
@@ -153,6 +156,7 @@ while True:
         continue
     break
 ```
+
 R-1 合并并发 0.2 后，jump-cut 一次性升级：删除 `_fyuneru_patch.py` 与 `registry.py:16` 的强制导入；supervisor 可保留为兜底（成本几乎为零）。
 
 ---

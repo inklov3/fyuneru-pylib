@@ -44,6 +44,7 @@
 - `uv run python test/test_config.py`
 - `uv run python test/test_task_queue.py`
 - `uv run python test/test_worker_env.py`
+- 容器构建：`podman build -f Containerfile.base -t fyuneru-base .`；构建上下文规则见 `.containerignore`。
 
 ## 结构与约束（影响实现决策）
 
