@@ -11,7 +11,7 @@ dependencies = [
 
 [dependency-groups]
 dev = [
-    "numpy>=2.4",
+    "numpy",
     "pyclean",
     "pyrefly",
     "ruff",

@@ -289,7 +289,7 @@ provides-extras = ["redis", "s3", "pipeline", "media", "gemini"]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "numpy", specifier = ">=2.4" },
+    { name = "numpy" },
     { name = "pyclean" },
     { name = "pyrefly" },
     { name = "ruff" },
