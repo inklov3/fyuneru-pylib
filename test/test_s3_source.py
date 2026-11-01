@@ -45,8 +45,11 @@ class FakeS3Client:
         self.uploaded: tuple[str, str, bytes] | None = None
         self.put_args: tuple | None = None
 
-    def get_object(self, bucket: str, key: str):
+    def get_object(
+        self, bucket: str, key: str, offset=0, length=0, request_headers=None
+    ):
         self.get_object_kwargs = {"Bucket": bucket, "Key": key}
+        self.range_args = (offset, length, request_headers)
         if self.get_error is not None:
             raise self.get_error
         return self.body
@@ -186,6 +189,33 @@ def test_bind_s3_reader_consumes_and_closes_body():
     assert body.closed
     assert body.released
     assert client.get_object_kwargs == {"Bucket": "bucket-a", "Key": "path.txt"}
+
+
+def test_bind_s3_reader_defaults_to_whole_object():
+    client = FakeS3Client(body=FakeBody(b"x"))
+    unwrap(bind_s3_reader(client, "bucket-a")("path.txt", lambda s: s.read()))
+    assert client.range_args == (0, 0, None)
+
+
+def test_bind_s3_reader_passes_range_and_if_match():
+    client = FakeS3Client(body=FakeBody(b"x"))
+    read = bind_s3_reader(client, "bucket-a")
+    for etag in ("abc", '"abc"'):
+        unwrap(read("p", lambda s: s.read(), offset=10, length=5, if_match=etag))
+        assert client.range_args == (10, 5, {"If-Match": '"abc"'})
+
+
+def test_bind_s3_reader_rejects_invalid_range():
+    client = FakeS3Client(body=FakeBody(b"x"))
+    read = bind_s3_reader(client, "bucket-a")
+
+    def consume(stream):
+        return stream.read()
+
+    assert is_failure(read("p", consume, offset=-1))
+    assert is_failure(read("p", consume, length=0))
+    assert is_failure(read("p", consume, if_match='""'))
+    assert client.get_object_kwargs is None
 
 
 def test_bind_s3_reader_wraps_get_object_error():
@@ -328,7 +358,7 @@ def test_bind_source_reader_consumes_stream():
     called: dict[str, str] = {}
 
     def fake_build_reader_for(_source_cfg: dict):
-        def fake_reader(key, consume):
+        def fake_reader(key, consume, **_kwargs):
 
             called["key"] = key
             return Success(consume(BytesIO(b"source-data")))
@@ -367,6 +397,9 @@ if __name__ == "__main__":
     test_load_source_registry_with_override()
     test_load_source_registry_validate_required_fields()
     test_bind_s3_reader_consumes_and_closes_body()
+    test_bind_s3_reader_defaults_to_whole_object()
+    test_bind_s3_reader_passes_range_and_if_match()
+    test_bind_s3_reader_rejects_invalid_range()
     test_bind_s3_reader_wraps_get_object_error()
     test_bind_s3_reader_wraps_body_read_error_and_closes_body()
     test_bind_s3_reader_wraps_consumer_error_and_closes_body()

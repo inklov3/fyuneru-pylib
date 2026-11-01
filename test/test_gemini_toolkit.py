@@ -34,9 +34,7 @@ class FakeModels:
         self.calls: list[dict] = []
 
     def generate_content(self, model, contents, config):
-        self.calls.append(
-            {"model": model, "contents": contents, "config": config}
-        )
+        self.calls.append({"model": model, "contents": contents, "config": config})
         if self.error is not None:
             raise self.error
         return self.response
@@ -69,9 +67,7 @@ def test_video_source_requires_exactly_one_input() -> None:
 
 
 def test_uri_source_builds_file_data_part() -> None:
-    part = build_video_part(
-        VideoSource(uri="https://example.com/a.mp4?sig=x")
-    )
+    part = build_video_part(VideoSource(uri="https://example.com/a.mp4?sig=x"))
     assert part.file_data is not None, "uri 必须走 fileData"
     assert part.file_data.file_uri == "https://example.com/a.mp4?sig=x"
     assert part.file_data.mime_type == "video/mp4"
@@ -109,9 +105,7 @@ def test_contents_put_video_before_prompt() -> None:
 
 def test_blank_prompt_rejected() -> None:
     try:
-        build_video_contents(
-            "   ", VideoSource(uri="https://example.com/a.mp4")
-        )
+        build_video_contents("   ", VideoSource(uri="https://example.com/a.mp4"))
     except ValueError:
         return
     raise AssertionError("空 prompt 必须被拒绝")
@@ -162,7 +156,7 @@ def test_response_json_parsing() -> None:
     for text in (None, "  ", "[1, 2]", "not-json"):
         try:
             response_to_json_object(FakeResponse(text))  # type: ignore[arg-type]
-        except (ValueError, Exception):
+        except ValueError, Exception:
             continue
         raise AssertionError(f"非法响应必须被拒绝: {text!r}")
 

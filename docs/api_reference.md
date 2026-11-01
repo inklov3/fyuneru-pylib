@@ -244,7 +244,11 @@ bind_s3_writer(client: Minio, bucket: str) -> ObjectStorageWriter
 # writer(key: str, body: BinaryIO) -> ResultE[None]  — MinIO put_object(length=-1, part_size=10 MiB)
 
 bind_s3_reader(client: Minio, bucket: str) -> ObjectStorageReader
-# reader(key: str, consume: Callable[[ReadableBinaryStream], T]) -> ResultE[T]
+# reader(key: str, consume: Callable[[ReadableBinaryStream], T], *,
+#        offset: int = 0, length: int | None = None,
+#        if_match: str | None = None) -> ResultE[T]
+# offset/length 读取字节区间，length 为 None 时读到对象末尾。
+# if_match 传对象 ETag（引号可有可无）；对象已变化时服务端返回 412，以 Failure 返回。
 # get_object、consume(body)、body.close() 都在 @safe 边界内执行。
 # consume 必须同步消费流，不要保存或返回 body 给外部继续读取。
 
@@ -318,7 +322,10 @@ load_source_registry(
 # When duplicate source_id is found, logs warning and uses later entry to override earlier.
 
 bind_source_reader(registry: dict[str, dict]) -> ObjectStorageReader
-# reader(uri: str, consume: Callable[[ReadableBinaryStream], T]) -> ResultE[T]
+# reader(uri: str, consume: Callable[[ReadableBinaryStream], T], *,
+#        offset: int = 0, length: int | None = None,
+#        if_match: str | None = None) -> ResultE[T]
+# offset/length/if_match 语义同 bind_s3_reader。
 # Returns a controlled-consumption closure that reads from blob:// URIs.
 # Lazily initializes S3 clients per bucket_id, caches them.
 ```

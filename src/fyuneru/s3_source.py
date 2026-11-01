@@ -109,6 +109,10 @@ class MultiSourceReader:
         self,
         uri: str,
         consume: Callable[[ReadableBinaryStream], T],
+        *,
+        offset: int = 0,
+        length: int | None = None,
+        if_match: str | None = None,
     ) -> ResultE[T]:
         parsed_result = _safe_parse_uri(uri)
         if isinstance(parsed_result, Failure):
@@ -120,7 +124,7 @@ class MultiSourceReader:
             return reader_result
 
         reader = unwrap(reader_result)
-        return reader(key, consume)
+        return reader(key, consume, offset=offset, length=length, if_match=if_match)
 
 
 @safe

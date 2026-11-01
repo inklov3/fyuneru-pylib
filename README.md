@@ -199,6 +199,7 @@ lister = bind_s3_lister(client, bucket="my-bucket")
 
 unwrap(write("demo.txt", BytesIO(b"hello")))
 data = unwrap(read("demo.txt", lambda body: body.read()))
+head = unwrap(read("demo.txt", lambda body: body.read(), offset=0, length=2))
 keys = unwrap(lister(prefix="data/", suffix=".parquet"))
 unwrap(delete("demo.txt"))
 ```

@@ -30,7 +30,13 @@ class ObjectStorageWriter(Protocol):
 
 class ObjectStorageReader(Protocol):
     def __call__(
-        self, key: str, consume: Callable[[ReadableBinaryStream], T]
+        self,
+        key: str,
+        consume: Callable[[ReadableBinaryStream], T],
+        *,
+        offset: int = 0,
+        length: int | None = None,
+        if_match: str | None = None,
     ) -> ResultE[T]: ...
 
 
@@ -156,11 +162,33 @@ def bind_s3_writer(client: Minio, bucket: str) -> ObjectStorageWriter:
 
 
 def bind_s3_reader(client: Minio, bucket: str) -> ObjectStorageReader:
-    """返回受控消费式 reader；消费回调同步读取，响应始终关闭。"""
+    """返回受控消费式 reader；消费回调同步读取，响应始终关闭。
+
+    offset/length 指定字节区间（length 为 None 时读到对象末尾）；
+    if_match 为对象 ETag，对象已变化时服务端返回 412，以 Failure 返回。
+    """
 
     @safe
-    def read_object(key: str, consume: Callable[[ReadableBinaryStream], T]) -> T:
-        response = client.get_object(bucket, key)
+    def read_object(
+        key: str,
+        consume: Callable[[ReadableBinaryStream], T],
+        *,
+        offset: int = 0,
+        length: int | None = None,
+        if_match: str | None = None,
+    ) -> T:
+        if offset < 0:
+            raise ValueError("offset 不能为负数")
+        if length is not None and length < 1:
+            raise ValueError("length 必须大于 0")
+        headers = None if if_match is None else {"If-Match": _quote_etag(if_match)}
+        response = client.get_object(
+            bucket,
+            key,
+            offset=offset,
+            length=0 if length is None else length,
+            request_headers=headers,
+        )
         try:
             return consume(response)
         finally:
@@ -217,6 +245,13 @@ def bind_s3_probe(client: Minio, bucket: str) -> ObjectStorageProbe:
         )
 
     return probe
+
+
+def _quote_etag(value: str) -> str:
+    stripped = value.strip('"')
+    if not stripped:
+        raise ValueError("if_match 不能为空")
+    return f'"{stripped}"'
 
 
 def _strip_etag(value: str | None) -> str | None:

@@ -34,9 +34,7 @@ def _synth_video(
         stream.height = height  # type: ignore[union-attr]
         stream.pix_fmt = "yuv420p"  # type: ignore[union-attr]
         for index in range(fps * seconds):
-            array = np.full(
-                (height, width, 3), index * 3 % 256, dtype=np.uint8
-            )
+            array = np.full((height, width, 3), index * 3 % 256, dtype=np.uint8)
             frame = VideoFrame.from_ndarray(array, format="rgb24")
             for packet in stream.encode(frame):  # type: ignore[union-attr]
                 container.mux(packet)
