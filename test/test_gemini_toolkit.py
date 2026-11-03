@@ -156,7 +156,7 @@ def test_response_json_parsing() -> None:
     for text in (None, "  ", "[1, 2]", "not-json"):
         try:
             response_to_json_object(FakeResponse(text))  # type: ignore[arg-type]
-        except ValueError, Exception:
+        except (ValueError, Exception):
             continue
         raise AssertionError(f"非法响应必须被拒绝: {text!r}")
 
